@@ -12,7 +12,7 @@ export default function VoiceAssistant({
   const [transcript, setTranscript] = useState("");
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [speechSupported, setSpeechSupported] = useState(true);
-  const [isOpen, setIsOpen] = useState(false); // Controls bottom-sheet drawer state
+  const [isOpen, setIsOpen] = useState(false); // Controls bottom sheet drawer open/close
 
   const recognitionRef = useRef(null);
   const synthesisUtteranceRef = useRef(null);
@@ -28,7 +28,12 @@ export default function VoiceAssistant({
     const rec = new SpeechRecognition();
     rec.continuous = false;
     rec.interimResults = false;
-    rec.lang = language === "hi" ? "hi-IN" : "en-IN";
+    
+    // Map language parameters to speech recognition locales
+    if (language === "hi") rec.lang = "hi-IN";
+    else if (language === "ta") rec.lang = "ta-IN";
+    else if (language === "te") rec.lang = "te-IN";
+    else rec.lang = "en-IN";
 
     rec.onstart = () => {
       setIsListening(true);
@@ -57,7 +62,6 @@ export default function VoiceAssistant({
   // Sync vocal readouts with AI responses
   useEffect(() => {
     if (aiResponse) {
-      // Auto-open assistant overlay when AI starts explaining things
       setIsOpen(true);
       speakText(aiResponse);
     }
@@ -69,14 +73,13 @@ export default function VoiceAssistant({
   const toggleListening = (e) => {
     e.stopPropagation();
     if (!speechSupported) {
-      alert("Speech recognition is not supported on this browser. Please try Chrome, Edge, or Safari, or type in the input.");
+      alert("Speech recognition is not supported on this browser. Please try Chrome, Edge, or Safari.");
       return;
     }
 
     if (isListening) {
       recognitionRef.current.stop();
     } else {
-      // Ensure the drawer is open when recording starts
       setIsOpen(true);
       recognitionRef.current.start();
     }
@@ -88,10 +91,15 @@ export default function VoiceAssistant({
 
     const cleanText = text.replace(/[*#_`\-]/g, "");
     const utterance = new SpeechSynthesisUtterance(cleanText);
-    utterance.lang = language === "hi" ? "hi-IN" : "en-IN";
+    
+    // Set synthesis language locale
+    if (language === "hi") utterance.lang = "hi-IN";
+    else if (language === "ta") utterance.lang = "ta-IN";
+    else if (language === "te") utterance.lang = "te-IN";
+    else utterance.lang = "en-IN";
     
     const voices = window.speechSynthesis.getVoices();
-    const targetLang = language === "hi" ? "hi" : "en";
+    const targetLang = language;
     const voice = voices.find(v => v.lang.startsWith(targetLang));
     if (voice) {
       utterance.voice = voice;
@@ -127,6 +135,59 @@ export default function VoiceAssistant({
     setIsOpen(false);
   };
 
+  // Translations for localized Assistant Interface
+  const i18n = {
+    title: {
+      hi: "आवाज़ असिस्टेंट",
+      en: "Awaaz AI Assistant",
+      ta: "ஆதார் குரல் அசிஸ்டண்ட்",
+      te: "ఆవాజ్ వాయిస్ అసిస్టెంట్"
+    },
+    sub: {
+      hi: "नीले गोले को छूकर अपनी उम्र, काम या परिवार के बारे में बताएं",
+      en: "Tap the blue orb to describe your age, job, land, or income",
+      ta: "உங்கள் வயது, தொழில் அல்லது வருமானம் பற்றி கூற நீல நிற வட்டத்தை தொடவும்",
+      te: "మీ వయస్సు, ఉద్యోగం లేదా ఆదాయం గురించి చెప్పడానికి నీలి రంగు సర్కిల్‌ను తాకండి"
+    },
+    trigger: {
+      listening: { hi: "सुन रहा हूँ...", en: "Listening...", ta: "கேட்கிறது...", te: "వింటున్నాను..." },
+      processing: { hi: "योजनाएं खोज रहा हूँ...", en: "Processing...", ta: "திட்டங்களை தேடுகிறது...", te: "పథకాలను వెతుకుతోంది..." },
+      speaking: { hi: "असिस्टेंट बोल रहा है...", en: "Speaking...", ta: "உரையாடுகிறது...", te: "మాట్లాడుతోంది..." },
+      standby: { 
+        hi: "आवाज़ से योजनाएं खोजें (Tap to Speak)", 
+        en: "Speak to find schemes", 
+        ta: "குரல் மூலம் தேடவும் (Tap to Speak)", 
+        te: "మాట్లాడి పథకాలు వెతకండి (Tap to Speak)" 
+      }
+    },
+    status: {
+      listening: { hi: "सुन रहा हूँ...", en: "Listening...", ta: "கேட்கிறது...", te: "వింటున్నాను..." },
+      processing: { hi: "खोज रहा हूँ...", en: "Matching schemes...", ta: "தேடுகிறது...", te: "వెతుకుతోంది..." },
+      speaking: { hi: "असिस्टेंट बोल रहा है", en: "Speaking...", ta: "உரையாடுகிறது...", te: "మాట్లాడుతోంది..." },
+      ready: { hi: "तैयार", en: "Ready", ta: "தயார்", te: "సిద్ధంగా ఉంది" }
+    },
+    mute: { hi: "म्यूट करें", en: "Mute audio", ta: "ஒலியை நிறுத்து", te: "మ్యూట్ చేయి" },
+    repeat: { hi: "फिर से सुनाएं", en: "Repeat Voice", ta: "மீண்டும் கேள்", te: "మరోసారి వినిపించు" },
+    transcriptLabel: { hi: "आपकी आवाज़ (ट्रांसक्रिप्ट)", en: "Your Voice Transcription", ta: "உங்கள் குரல் (நகல்)", te: "మీ వాయిస్ (ట్రాన్స్క్రిప్ట్)" },
+    placeholderText: { 
+      hi: "माइक आइकॉन दबाएं या नीचे टाइप करें...", 
+      en: "Microphone input transcript will show here...",
+      ta: "குரல் மூலம் பேசவும் அல்லது தட்டச்சு செய்யவும்...",
+      te: "మైక్రోఫోన్ ఉపయోగించండి లేదా ఇక్కడ టైప్ చేయండి..."
+    },
+    aiAdvice: { hi: "असिस्टेंट का सुझाव", en: "Voice Advice Summary", ta: "அசிஸ்டண்ட் பரிந்துரை", te: "అసిస్టెంట్ సలహా" },
+    inputPlaceholder: { 
+      hi: "यहाँ टाइप करके भी पूछ सकते हैं...", 
+      en: "Or type your message...",
+      ta: "இங்கே தட்டச்சு செய்து கேட்கலாம்...",
+      te: "ఇక్కడ టైప్ చేసి కూడా అడగవచ్చు..."
+    }
+  };
+
+  const getTranslation = (key, fallback = "") => {
+    return i18n[key]?.[language] || i18n[key]?.en || fallback;
+  };
+
   return (
     <>
       {/* 1. Compact Floating Bottom Capsule (Sticky Trigger) */}
@@ -146,27 +207,27 @@ export default function VoiceAssistant({
           </div>
           <span className="trigger-text">
             {isListening 
-              ? (language === "hi" ? "सुन रहा हूँ..." : "Listening...")
+              ? getTranslation("trigger", {}).listening
               : isProcessing 
-                ? (language === "hi" ? "योजनाएं खोज रहा हूँ..." : "Processing...")
+                ? getTranslation("trigger", {}).processing
                 : isSpeaking 
-                  ? (language === "hi" ? "असिस्टेंट बोल रहा है..." : "Speaking...")
-                  : (language === "hi" ? "आवाज़ से योजनाएं खोजें (Tap to Speak)" : "Speak to find schemes")}
+                  ? getTranslation("trigger", {}).speaking
+                  : getTranslation("trigger", {}).standby}
           </span>
           <ChevronUp size={16} className="trigger-arrow" />
         </div>
       </div>
 
-      {/* 2. Glassmorphic Modal Overlay / Drawer */}
+      {/* 2. Glassmorphic Bottom Sheet Drawer */}
       {isOpen && (
         <div className="assistant-overlay" onClick={handleClose}>
           <div className="assistant-sheet glass-panel" onClick={(e) => e.stopPropagation()}>
             
-            {/* Header control */}
+            {/* Header controls */}
             <div className="sheet-header">
               <h3 style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
                 <span className="live-dot"></span>
-                <span>{language === "hi" ? "आवाज़ असिस्टेंट" : "Awaaz AI Assistant"}</span>
+                <span>{getTranslation("title")}</span>
               </h3>
               <button className="btn close-sheet-btn" onClick={handleClose}>
                 <X size={18} />
@@ -175,9 +236,7 @@ export default function VoiceAssistant({
 
             <div className="sheet-body">
               <p className="status-sub">
-                {language === "hi" 
-                  ? "नीले गोले को छूकर अपनी उम्र, काम या परिवार के बारे में बताएं" 
-                  : "Tap the blue orb to describe your age, job, land, or income"}
+                {getTranslation("sub")}
               </p>
 
               {/* Glowing Orb */}
@@ -201,52 +260,70 @@ export default function VoiceAssistant({
                 <div className="orb-ring-2"></div>
               </div>
 
-              {/* Speech Controls & Audio Stats */}
+              {/* Speech Controls */}
               <div className="audio-actions-row">
-                {isSpeaking && (
-                  <button 
-                    className="btn btn-danger" 
-                    style={{ padding: "0.35rem 0.75rem", fontSize: "0.8rem" }} 
-                    onClick={cancelSpeaking}
-                  >
-                    <VolumeX size={14} /> {language === "hi" ? "म्यूट करें" : "Mute audio"}
-                  </button>
+                {isListening && (
+                  <span className="status-text" style={{ color: "var(--color-danger)" }}>
+                    {getTranslation("status", {}).listening}
+                  </span>
                 )}
-                {!isSpeaking && aiResponse && (
-                  <button 
-                    className="btn" 
-                    style={{ padding: "0.35rem 0.75rem", fontSize: "0.8rem" }} 
-                    onClick={() => speakText(aiResponse)}
-                  >
-                    <Volume2 size={14} /> {language === "hi" ? "फिर से सुनाएं" : "Repeat Voice"}
-                  </button>
+                {isProcessing && (
+                  <span className="status-text text-gradient">
+                    {getTranslation("status", {}).processing}
+                  </span>
                 )}
+                {!isListening && !isProcessing && (
+                  <span className="status-text">
+                    {isSpeaking 
+                      ? getTranslation("status", {}).speaking 
+                      : getTranslation("status", {}).ready}
+                  </span>
+                )}
+                
+                <div style={{ marginLeft: "auto", display: "flex", gap: "0.5rem" }}>
+                  {isSpeaking && (
+                    <button 
+                      className="btn btn-danger" 
+                      style={{ padding: "0.35rem 0.75rem", fontSize: "0.8rem" }} 
+                      onClick={cancelSpeaking}
+                    >
+                      <VolumeX size={14} /> {getTranslation("mute")}
+                    </button>
+                  )}
+                  {!isSpeaking && aiResponse && (
+                    <button 
+                      className="btn" 
+                      style={{ padding: "0.35rem 0.75rem", fontSize: "0.8rem" }} 
+                      onClick={() => speakText(aiResponse)}
+                    >
+                      <Volume2 size={14} /> {getTranslation("repeat")}
+                    </button>
+                  )}
+                </div>
               </div>
 
-              {/* Live Transcript Panel */}
+              {/* Live Transcript Box */}
               <div className="transcript-box">
                 <div className="transcript-label">
-                  {language === "hi" ? "आपकी आवाज़ (ट्रांसक्रिप्ट)" : "Your Voice Transcription"}
+                  {getTranslation("transcriptLabel")}
                 </div>
                 <div className="transcript-text">
                   {transcript ? (
                     transcript
                   ) : (
                     <span className="transcript-placeholder">
-                      {language === "hi" 
-                        ? "माइक आइकॉन दबाएं या नीचे टाइप करें..." 
-                        : "Microphone input transcript will show here..."}
+                      {getTranslation("placeholderText")}
                     </span>
                   )}
                 </div>
               </div>
 
-              {/* Vernacular Speech Response Block */}
+              {/* AI Vernacular Advice Speech Block */}
               {aiResponse && (
                 <div className="ai-response-box" style={{ marginTop: "0.5rem" }}>
                   <div className="ai-response-title text-gradient">
                     <Volume2 size={14} />
-                    <span>{language === "hi" ? "असिस्टेंट का सुझाव" : "Voice Advice Summary"}</span>
+                    <span>{getTranslation("aiAdvice")}</span>
                   </div>
                   <div className="ai-response-text">{aiResponse}</div>
                 </div>
@@ -258,12 +335,12 @@ export default function VoiceAssistant({
               <form onSubmit={handleTextSubmit} style={{ width: "100%", display: "flex", gap: "0.5rem" }}>
                 <input
                   type="text"
-                  placeholder={language === "hi" ? "यहाँ टाइप करके भी पूछ सकते हैं..." : "Or type your message..."}
+                  placeholder={getTranslation("inputPlaceholder")}
                   value={textInput}
                   onChange={(e) => setTextInput(e.target.value)}
                   style={{
                     flex: 1,
-                    background: "rgba(0, 0, 0, 0.3)",
+                    background: "rgba(0, 0, 0, 0.03)",
                     border: "1px solid var(--border-glass)",
                     borderRadius: "var(--radius-md)",
                     padding: "0.75rem 1rem",

@@ -84,18 +84,20 @@ Return ONLY a valid JSON object matching the keys listed above. Do not include m
 export async function generateVernacularSummary(schemesList, userProfile, language = "en") {
   const languageNames = {
     en: "English",
-    hi: "Hindi"
+    hi: "Hindi",
+    ta: "Tamil",
+    te: "Telugu"
   };
 
   const chosenLang = languageNames[language] || "English";
   
   if (schemesList.length === 0) {
-    return language === "hi" 
-      ? "मुझे आपकी जानकारी के अनुसार कोई उपयुक्त योजना नहीं मिली। कृपया अपनी जानकारी स्पष्ट रूप से बताएं।"
-      : "I couldn't find any suitable schemes based on your information. Please try explaining your situation with more details.";
+    if (language === "hi") return "मुझे आपकी जानकारी के अनुसार कोई उपयुक्त योजना नहीं मिली।";
+    if (language === "ta") return "உங்கள் விவரங்களின்படி பொருத்தமான திட்டங்கள் எதுவும் கிடைக்கவில்லை.";
+    if (language === "te") return "మీ వివరాల ప్రకారం సరిపోయే పథకాలు ఏవీ లభించలేదు.";
+    return "I couldn't find any suitable schemes based on your information.";
   }
 
-  // Pick top 2 schemes to present clearly in the speech response
   const topSchemes = schemesList.slice(0, 2);
   const schemesText = topSchemes.map(s => {
     return `Scheme: ${s.scheme.name}
@@ -159,18 +161,17 @@ export function getEmptyProfile() {
 }
 
 /**
- * Keyword-based heuristic parser for local fallback operations (Hackathon Mode)
+ * Keyword-based heuristic parser for local fallback operations (Supports Hi, En, Ta, Te keywords)
  */
 function parseProfileLocally(text) {
   const t = text.toLowerCase();
   const profile = getEmptyProfile();
 
   // Extract Age
-  const ageMatch = t.match(/(\d+)\s*(saal|years|year|age|sal|sal)/);
+  const ageMatch = t.match(/(\d+)\s*(saal|years|year|age|sal|sal|വയസ്സ്|வயது|వయస్సు)/);
   if (ageMatch) {
     profile.age = parseInt(ageMatch[1], 10);
   } else {
-    // Check general numbers
     const numMatches = t.match(/\b\d{2}\b/g);
     if (numMatches && numMatches.length > 0) {
       const num = parseInt(numMatches[0], 10);
@@ -181,125 +182,160 @@ function parseProfileLocally(text) {
   }
 
   // Extract Gender
-  if (t.includes("mahila") || t.includes("woman") || t.includes("female") || t.includes("ladki") || t.includes("aurat") || t.includes("mother") || t.includes("widow") || t.includes("vidhwa")) {
+  if (
+    t.includes("mahila") || t.includes("woman") || t.includes("female") || t.includes("ladki") || t.includes("aurat") || 
+    t.includes("mother") || t.includes("widow") || t.includes("vidhwa") ||
+    t.includes("பெண்") || t.includes("தாய்") || t.includes("மனைவி") ||
+    t.includes("మహిళ") || t.includes("స్త్రీ") || t.includes("తల్లి")
+  ) {
     profile.gender = "female";
-  } else if (t.includes("man") || t.includes("male") || t.includes("aadmi") || t.includes("purush") || t.includes("ladka")) {
+  } else if (
+    t.includes("man") || t.includes("male") || t.includes("aadmi") || t.includes("purush") || t.includes("ladka") ||
+    t.includes("ஆண்") || t.includes("புருஷன்") ||
+    t.includes("మగ") || t.includes("పురుషుడు")
+  ) {
     profile.gender = "male";
   }
 
   // Extract Occupation
-  if (t.includes("kisan") || t.includes("kheti") || t.includes("farmer") || t.includes("khet")) {
+  const isFarmer = t.includes("kisan") || t.includes("kheti") || t.includes("farmer") || t.includes("khet") ||
+                   t.includes("விவசாயி") || t.includes("விவசாயம்") ||
+                   t.includes("రైతు") || t.includes("వ్యవసాయం");
+  
+  const isLaborer = t.includes("laborer") || t.includes("majdoor") || t.includes("kamgar") || t.includes("construction") || t.includes("building") ||
+                    t.includes("தொழிலாளி") || t.includes("வேலை") ||
+                    t.includes("కూలి") || t.includes("పని");
+
+  const isVendor = t.includes("vendor") || t.includes("thela") || t.includes("rehari") || t.includes("shop") || t.includes("dukan") ||
+                   t.includes("வியாபாரி") || t.includes("கடை") ||
+                   t.includes("వ్యాపారి") || t.includes("దుకాణం");
+
+  const isArtisan = t.includes("carpenter") || t.includes("sutar") || t.includes("lohar") || t.includes("artisan") || t.includes("vishwakarma") ||
+                    t.includes("கைவினைஞர்") || t.includes("நெசவாளர்") ||
+                    t.includes("చేతివృత్తి") || t.includes("విశ్వకర్మ");
+
+  if (isFarmer) {
     profile.occupation = "farmer";
     profile.land_ownership = true;
-  } else if (t.includes("vendor") || t.includes("thela") || t.includes("rehari") || t.includes("shop") || t.includes("dukan") || t.includes("vendor")) {
+  } else if (isVendor) {
     profile.occupation = "vendor";
-  } else if (t.includes("tailor") || t.includes("darzi") || t.includes("silai")) {
-    profile.occupation = "tailor";
-  } else if (t.includes("barber") || t.includes("nai") || t.includes("baal")) {
-    profile.occupation = "barber";
-  } else if (t.includes("laborer") || t.includes("majdoor") || t.includes("kamgar") || t.includes("construction") || t.includes("building") || t.includes("mitti")) {
+  } else if (isLaborer) {
     profile.occupation = "laborer";
-  } else if (t.includes("ghar ka kaam") || t.includes("maid") || t.includes("cook") || t.includes("domestic")) {
-    profile.occupation = "domestic_worker";
-  } else if (t.includes("carpenter") || t.includes("sutar") || t.includes("lohar") || t.includes("artisan") || t.includes("vishwakarma") || t.includes("murtikar")) {
+  } else if (isArtisan) {
     profile.occupation = "artisan";
-  } else if (t.includes("naukri nahi") || t.includes("unemployed") || t.includes("berozgar") || t.includes("no job")) {
-    profile.occupation = "unemployed";
+  } else if (t.includes("tailor") || t.includes("darzi") || t.includes("தையல்காரர்") || t.includes("Tailor")) {
+    profile.occupation = "tailor";
+  } else if (t.includes("barber") || t.includes("nai") || t.includes("மங்கல") || t.includes("మంగలి")) {
+    profile.occupation = "barber";
+  } else if (t.includes("widow") || t.includes("vidhwa") || t.includes("விதவை") || t.includes("వితంతువు")) {
+    profile.marital_status = "widow";
+    profile.gender = "female";
   }
 
   // Land Ownership
-  if (t.includes("no land") || t.includes("landless") || t.includes("zameen nahi") || t.includes("bhoomiheen") || t.includes("apna khet nahi")) {
+  if (t.includes("no land") || t.includes("landless") || t.includes("zameen nahi") || t.includes("bhoomiheen") || t.includes("apna khet nahi") ||
+      t.includes("நிலம் இல்லை") || t.includes("பூமி இல்லை") ||
+      t.includes("భూమి లేదు") || t.includes("సొంత పొలం లేదు")) {
     profile.land_ownership = false;
-  } else if (t.includes("have land") || t.includes("zameen hai") || t.includes("apna khet hai")) {
+  } else if (t.includes("have land") || t.includes("zameen hai") || t.includes("apna khet hai") ||
+             t.includes("நிலம் இருக்கு") || t.includes("சொந்த நிலம்") ||
+             t.includes("భూమి ఉంది") || t.includes("సొంత పొలం ఉంది")) {
     profile.land_ownership = true;
   }
 
   // Marital Status
-  if (t.includes("widow") || t.includes("vidhwa") || t.includes("pati nahi")) {
+  if (t.includes("widow") || t.includes("vidhwa") || t.includes("pati nahi") || t.includes("விதவை") || t.includes("వితంతువు")) {
     profile.marital_status = "widow";
     profile.gender = "female";
-  } else if (t.includes("married") || t.includes("shadi") || t.includes("patni") || t.includes("pati")) {
+  } else if (t.includes("married") || t.includes("shadi") || t.includes("patni") || t.includes("pati") || t.includes("திருமணம்") || t.includes("పెళ్లి")) {
     profile.marital_status = "married";
   }
 
   // Income / BPL
-  if (t.includes("bpl") || t.includes("ration card") || t.includes("garib") || t.includes("poor") || t.includes("poverty")) {
+  if (t.includes("bpl") || t.includes("ration card") || t.includes("garib") || t.includes("poor") || t.includes("poverty") ||
+      t.includes("ஏழை") || t.includes("ரேஷன் கார்டு") ||
+      t.includes("పేద") || t.includes("రేషన్ కార్డ్")) {
     profile.bpl = true;
   }
-  
-  if (t.includes("income tax") || t.includes("tax payer") || t.includes("tax deta hu")) {
-    profile.is_income_tax_payer = true;
-  }
 
-  const incomeMatch = t.match(/(rs|rupees|inr|salary|income|kamata)\s*(\d+)/) || t.match(/(\d+)\s*(hazar|thousand|rupees|rs)/);
-  if (incomeMatch) {
-    let amt = parseInt(incomeMatch[1] || incomeMatch[2], 10);
-    // If they say e.g. "8 hazar" or "8 thousand"
-    if (t.includes("hazar") || t.includes("thousand")) {
-      amt = amt * 1000;
-    }
-    if (amt > 100) profile.income_bracket = amt;
-  }
-
-  // Documents/Accounts
-  if (t.includes("bank account") || t.includes("khata hai") || t.includes("bank khata")) {
+  // Documents
+  if (t.includes("bank account") || t.includes("khata hai") || t.includes("bank khata") ||
+      t.includes("வங்கி கணக்கு") || t.includes("பேங்க் கணக்கு") ||
+      t.includes("బ్యాంక్ ఖాతా") || t.includes("ఖాతా ఉంది")) {
     profile.has_bank_account = true;
-  } else if (t.includes("no bank") || t.includes("khata nahi")) {
-    profile.has_bank_account = false;
   }
-
-  if (t.includes("aadhaar") || t.includes("adhar") || t.includes("aadhar")) {
+  if (t.includes("aadhaar") || t.includes("adhar") || t.includes("aadhar") || t.includes("ஆதார்") || t.includes("ఆధార్")) {
     profile.has_aadhaar = true;
-  } else if (t.includes("no adhar") || t.includes("no aadhaar") || t.includes("aadhaar nahi")) {
-    profile.has_aadhaar = false;
   }
 
   return profile;
 }
 
 /**
- * Local fallback summarizer when Gemini is offline or key is missing
+ * Local fallback summarizer supporting English, Hindi, Tamil, and Telugu
  */
 function generateSummaryLocally(topMatches, language) {
   if (topMatches.length === 0) {
-    return language === "hi"
-      ? "मुझे कोई उपयुक्त योजना नहीं मिली। कृपया अपने काम और उम्र के बारे में और जानकारी दें।"
-      : "I could not find any suitable schemes. Please specify your age, occupation, or details more clearly.";
+    if (language === "hi") return "मुझे कोई उपयुक्त योजना नहीं मिली। कृपया और जानकारी दें।";
+    if (language === "ta") return "பொருத்தமான திட்டங்கள் எதுவும் கிடைக்கவில்லை. மேலும் விவரங்களை வழங்கவும்.";
+    if (language === "te") return "తగిన పథకాలు ఏవీ లభించలేదు. దయచేసి మరింత సమాచారం ఇవ్వండి.";
+    return "I could not find any suitable schemes. Please specify details more clearly.";
   }
 
   let text = "";
+  
   if (language === "hi") {
-    text = "आपके लिए मुख्य योजनाएं इस प्रकार हैं: ";
+    text = "आपके लिए योजनाएं इस प्रकार हैं: ";
     topMatches.forEach((m, i) => {
       const s = m.scheme;
       text += `${i + 1}. ${s.name}। `;
       if (m.status === "eligible") {
-        text += `आप इसके लिए पात्र हैं। इसके फायदे हैं: ${s.benefits}। `;
+        text += `फायदे हैं: ${s.benefits}। `;
       } else {
-        text += `आप इसके लगभग पात्र हैं। `;
-        if (m.missing.length > 0) {
-          text += `इसके लिए आपको ${m.missing.join(", ")} की आवश्यकता होगी। `;
-        }
+        text += `आप लगभग पात्र हैं। `;
+        if (m.missing.length > 0) text += `आवश्यकता है: ${m.missing.join(", ")}। `;
       }
-      text += `आवेदन के लिए आपको ${s.documents_needed.slice(0, 2).join(" और ")} चाहिए होगा। `;
     });
-    text += "आवेदन करने के लिए अपने नजदीकी जन सेवा केंद्र पर जाएं।";
-  } else {
-    text = "Based on your details, here are the top schemes for you: ";
+  } 
+  else if (language === "ta") {
+    text = "உங்களுக்கான திட்டங்கள் பின்வருமாறு: ";
     topMatches.forEach((m, i) => {
       const s = m.scheme;
       text += `${i + 1}. ${s.name}. `;
       if (m.status === "eligible") {
-        text += `You qualify for this. The benefits are: ${s.benefits}. `;
+        text += `பயன்கள்: ${s.benefits}. `;
+      } else {
+        text += `நீங்கள் கிட்டத்தட்ட தகுதியுடையவர். `;
+        if (m.missing.length > 0) text += `தேவை: ${m.missing.join(", ")}. `;
+      }
+    });
+  } 
+  else if (language === "te") {
+    text = "మీకు సరిపోయే పథకాలు ఇవిగోండి: ";
+    topMatches.forEach((m, i) => {
+      const s = m.scheme;
+      text += `${i + 1}. ${s.name}. `;
+      if (m.status === "eligible") {
+        text += `ప్రయోజనాలు: ${s.benefits}. `;
+      } else {
+        text += `మీరు దాదాపు అర్హులు. `;
+        if (m.missing.length > 0) text += `కావాల్సినవి: ${m.missing.join(", ")}. `;
+      }
+    });
+  } 
+  else {
+    text = "Here are the top schemes for you: ";
+    topMatches.forEach((m, i) => {
+      const s = m.scheme;
+      text += `${i + 1}. ${s.name}. `;
+      if (m.status === "eligible") {
+        text += `Benefits: ${s.benefits}. `;
       } else {
         text += `You almost qualify. `;
-        if (m.missing.length > 0) {
-          text += `To qualify, you need to provide: ${m.missing.join(", ")}. `;
-        }
+        if (m.missing.length > 0) text += `Required: ${m.missing.join(", ")}. `;
       }
-      text += `Required documents include ${s.documents_needed.slice(0, 2).join(" and ")}. `;
     });
-    text += "You can apply online at the official portal or visit your nearest Common Service Centre.";
   }
+
   return text;
 }
