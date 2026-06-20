@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
-import { Mic, MicOff, Volume2, VolumeX, Send, Loader2, Play } from "lucide-react";
+import { Mic, MicOff, Volume2, VolumeX, Send, Loader2, X, ChevronUp } from "lucide-react";
 
 export default function VoiceAssistant({ 
   onTranscriptReceived, 
@@ -12,6 +12,7 @@ export default function VoiceAssistant({
   const [transcript, setTranscript] = useState("");
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [speechSupported, setSpeechSupported] = useState(true);
+  const [isOpen, setIsOpen] = useState(false); // Controls bottom-sheet drawer state
 
   const recognitionRef = useRef(null);
   const synthesisUtteranceRef = useRef(null);
@@ -27,13 +28,11 @@ export default function VoiceAssistant({
     const rec = new SpeechRecognition();
     rec.continuous = false;
     rec.interimResults = false;
-    // Map language parameter to speech locales
     rec.lang = language === "hi" ? "hi-IN" : "en-IN";
 
     rec.onstart = () => {
       setIsListening(true);
       setTranscript("");
-      // Cancel any ongoing speaking to prevent audio overlap
       cancelSpeaking();
     };
 
@@ -55,9 +54,11 @@ export default function VoiceAssistant({
     recognitionRef.current = rec;
   }, [language, onTranscriptReceived]);
 
-  // Handle Speech synthesis readouts when AI Response updates
+  // Sync vocal readouts with AI responses
   useEffect(() => {
     if (aiResponse) {
+      // Auto-open assistant overlay when AI starts explaining things
+      setIsOpen(true);
       speakText(aiResponse);
     }
     return () => {
@@ -65,31 +66,30 @@ export default function VoiceAssistant({
     };
   }, [aiResponse]);
 
-  const toggleListening = () => {
+  const toggleListening = (e) => {
+    e.stopPropagation();
     if (!speechSupported) {
-      alert("Speech recognition is not supported on this browser. Please try Chrome, Edge, or Safari, or use the text input below.");
+      alert("Speech recognition is not supported on this browser. Please try Chrome, Edge, or Safari, or type in the input.");
       return;
     }
 
     if (isListening) {
       recognitionRef.current.stop();
     } else {
+      // Ensure the drawer is open when recording starts
+      setIsOpen(true);
       recognitionRef.current.start();
     }
   };
 
   const speakText = (text) => {
     cancelSpeaking();
-
     if (!window.speechSynthesis) return;
 
-    // Clean text of markdown characters before synthesis
     const cleanText = text.replace(/[*#_`\-]/g, "");
-
     const utterance = new SpeechSynthesisUtterance(cleanText);
     utterance.lang = language === "hi" ? "hi-IN" : "en-IN";
     
-    // Attempt to pick a good local voice
     const voices = window.speechSynthesis.getVoices();
     const targetLang = language === "hi" ? "hi" : "en";
     const voice = voices.find(v => v.lang.startsWith(targetLang));
@@ -121,130 +121,165 @@ export default function VoiceAssistant({
     cancelSpeaking();
   };
 
-  return (
-    <div className="glass-panel assistant-panel">
-      <div>
-        <h2 className="text-gradient" style={{ fontSize: "1.5rem", marginBottom: "0.25rem" }}>
-          {language === "hi" ? "आवाज़ असिस्टेंट" : "Awaaz Assistant"}
-        </h2>
-        <p className="status-sub">
-          {language === "hi" 
-            ? "माइक चालू करने के लिए नीले गोले को छुएं और अपनी समस्या बताएं" 
-            : "Tap the blue orb to speak and describe your work, income, or family details"}
-        </p>
-      </div>
+  const handleClose = (e) => {
+    e.stopPropagation();
+    cancelSpeaking();
+    setIsOpen(false);
+  };
 
-      {/* Glowing Orb UI */}
-      <div className="orb-container">
-        <div 
-          className={`orb ${isListening ? "recording" : ""} ${isSpeaking ? "speaking" : ""}`}
-          onClick={toggleListening}
-        >
-          <div className="mic-icon-container">
+  return (
+    <>
+      {/* 1. Compact Floating Bottom Capsule (Sticky Trigger) */}
+      <div 
+        className={`floating-assistant-trigger ${isListening ? "active-listening" : ""} ${isSpeaking ? "active-speaking" : ""}`}
+        onClick={() => setIsOpen(true)}
+      >
+        <div className="trigger-content">
+          <div className="pulse-mic-icon">
             {isListening ? (
-              <MicOff size={40} />
+              <MicOff size={16} className="text-danger" />
             ) : isProcessing ? (
-              <Loader2 size={40} className="animate-spin" />
+              <Loader2 size={16} className="animate-spin text-gradient" />
             ) : (
-              <Mic size={40} />
+              <Mic size={16} />
             )}
           </div>
-        </div>
-        <div className="orb-pulse-ring"></div>
-        <div className="orb-ring-1"></div>
-        <div className="orb-ring-2"></div>
-      </div>
-
-      {/* Speaking Indicator & Audio controls */}
-      <div style={{ minHeight: "40px", display: "flex", alignItems: "center", gap: "0.5rem" }}>
-        {isListening && (
-          <span className="status-text" style={{ color: "var(--color-danger)" }}>
-            {language === "hi" ? "सुन रहा हूँ..." : "Listening..."}
+          <span className="trigger-text">
+            {isListening 
+              ? (language === "hi" ? "सुन रहा हूँ..." : "Listening...")
+              : isProcessing 
+                ? (language === "hi" ? "योजनाएं खोज रहा हूँ..." : "Processing...")
+                : isSpeaking 
+                  ? (language === "hi" ? "असिस्टेंट बोल रहा है..." : "Speaking...")
+                  : (language === "hi" ? "आवाज़ से योजनाएं खोजें (Tap to Speak)" : "Speak to find schemes")}
           </span>
-        )}
-        {isProcessing && (
-          <span className="status-text text-gradient">
-            {language === "hi" ? "योजनाएं खोज रहा हूँ..." : "Matching schemes..."}
-          </span>
-        )}
-        {!isListening && !isProcessing && (
-          <span className="status-text">
-            {isSpeaking 
-              ? (language === "hi" ? "असिस्टेंट बोल रहा है" : "Speaking...") 
-              : (language === "hi" ? "तैयार" : "Ready")}
-          </span>
-        )}
-
-        {isSpeaking && (
-          <button 
-            className="btn" 
-            style={{ padding: "0.25rem 0.5rem", fontSize: "0.75rem", borderColor: "var(--color-danger-bg)" }} 
-            onClick={cancelSpeaking}
-          >
-            <VolumeX size={14} /> {language === "hi" ? "म्यूट करें" : "Mute"}
-          </button>
-        )}
-        {!isSpeaking && aiResponse && (
-          <button 
-            className="btn" 
-            style={{ padding: "0.25rem 0.5rem", fontSize: "0.75rem" }} 
-            onClick={() => speakText(aiResponse)}
-          >
-            <Volume2 size={14} /> {language === "hi" ? "सुनाएं" : "Read Aloud"}
-          </button>
-        )}
-      </div>
-
-      {/* Transcript Box */}
-      <div className="transcript-box">
-        <div className="transcript-label">
-          {language === "hi" ? "आपकी आवाज़ (ट्रांसक्रिप्ट)" : "Your Voice (Transcript)"}
-        </div>
-        <div className="transcript-text">
-          {transcript ? (
-            transcript
-          ) : (
-            <span className="transcript-placeholder">
-              {language === "hi" 
-                ? "माइक पर क्लिक करें या नीचे टाइप करें..." 
-                : "Microphone transcript will appear here..."}
-            </span>
-          )}
+          <ChevronUp size={16} className="trigger-arrow" />
         </div>
       </div>
 
-      {/* AI Vernacular Speech Text Box */}
-      {aiResponse && (
-        <div className="ai-response-box">
-          <div className="ai-response-title text-gradient">
-            <Volume2 size={14} />
-            <span>{language === "hi" ? "असिस्टेंट की सलाह" : "Assistant Advice"}</span>
+      {/* 2. Glassmorphic Modal Overlay / Drawer */}
+      {isOpen && (
+        <div className="assistant-overlay" onClick={handleClose}>
+          <div className="assistant-sheet glass-panel" onClick={(e) => e.stopPropagation()}>
+            
+            {/* Header control */}
+            <div className="sheet-header">
+              <h3 style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                <span className="live-dot"></span>
+                <span>{language === "hi" ? "आवाज़ असिस्टेंट" : "Awaaz AI Assistant"}</span>
+              </h3>
+              <button className="btn close-sheet-btn" onClick={handleClose}>
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="sheet-body">
+              <p className="status-sub">
+                {language === "hi" 
+                  ? "नीले गोले को छूकर अपनी उम्र, काम या परिवार के बारे में बताएं" 
+                  : "Tap the blue orb to describe your age, job, land, or income"}
+              </p>
+
+              {/* Glowing Orb */}
+              <div className="orb-container">
+                <div 
+                  className={`orb ${isListening ? "recording" : ""} ${isSpeaking ? "speaking" : ""}`}
+                  onClick={toggleListening}
+                >
+                  <div className="mic-icon-container">
+                    {isListening ? (
+                      <MicOff size={36} />
+                    ) : isProcessing ? (
+                      <Loader2 size={36} className="animate-spin" />
+                    ) : (
+                      <Mic size={36} />
+                    )}
+                  </div>
+                </div>
+                <div className="orb-pulse-ring"></div>
+                <div className="orb-ring-1"></div>
+                <div className="orb-ring-2"></div>
+              </div>
+
+              {/* Speech Controls & Audio Stats */}
+              <div className="audio-actions-row">
+                {isSpeaking && (
+                  <button 
+                    className="btn btn-danger" 
+                    style={{ padding: "0.35rem 0.75rem", fontSize: "0.8rem" }} 
+                    onClick={cancelSpeaking}
+                  >
+                    <VolumeX size={14} /> {language === "hi" ? "म्यूट करें" : "Mute audio"}
+                  </button>
+                )}
+                {!isSpeaking && aiResponse && (
+                  <button 
+                    className="btn" 
+                    style={{ padding: "0.35rem 0.75rem", fontSize: "0.8rem" }} 
+                    onClick={() => speakText(aiResponse)}
+                  >
+                    <Volume2 size={14} /> {language === "hi" ? "फिर से सुनाएं" : "Repeat Voice"}
+                  </button>
+                )}
+              </div>
+
+              {/* Live Transcript Panel */}
+              <div className="transcript-box">
+                <div className="transcript-label">
+                  {language === "hi" ? "आपकी आवाज़ (ट्रांसक्रिप्ट)" : "Your Voice Transcription"}
+                </div>
+                <div className="transcript-text">
+                  {transcript ? (
+                    transcript
+                  ) : (
+                    <span className="transcript-placeholder">
+                      {language === "hi" 
+                        ? "माइक आइकॉन दबाएं या नीचे टाइप करें..." 
+                        : "Microphone input transcript will show here..."}
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              {/* Vernacular Speech Response Block */}
+              {aiResponse && (
+                <div className="ai-response-box" style={{ marginTop: "0.5rem" }}>
+                  <div className="ai-response-title text-gradient">
+                    <Volume2 size={14} />
+                    <span>{language === "hi" ? "असिस्टेंट का सुझाव" : "Voice Advice Summary"}</span>
+                  </div>
+                  <div className="ai-response-text">{aiResponse}</div>
+                </div>
+              )}
+            </div>
+
+            {/* Manual text input */}
+            <div className="sheet-footer">
+              <form onSubmit={handleTextSubmit} style={{ width: "100%", display: "flex", gap: "0.5rem" }}>
+                <input
+                  type="text"
+                  placeholder={language === "hi" ? "यहाँ टाइप करके भी पूछ सकते हैं..." : "Or type your message..."}
+                  value={textInput}
+                  onChange={(e) => setTextInput(e.target.value)}
+                  style={{
+                    flex: 1,
+                    background: "rgba(0, 0, 0, 0.3)",
+                    border: "1px solid var(--border-glass)",
+                    borderRadius: "var(--radius-md)",
+                    padding: "0.75rem 1rem",
+                    color: "var(--text-primary)",
+                    outline: "none"
+                  }}
+                />
+                <button type="submit" className="btn btn-primary" style={{ padding: "0.75rem" }}>
+                  <Send size={16} />
+                </button>
+              </form>
+            </div>
+            
           </div>
-          <div className="ai-response-text">{aiResponse}</div>
         </div>
       )}
-
-      {/* Manual text input forms */}
-      <form onSubmit={handleTextSubmit} style={{ width: "100%", display: "flex", gap: "0.5rem", marginTop: "auto" }}>
-        <input
-          type="text"
-          placeholder={language === "hi" ? "अपनी परेशानी यहाँ लिखें..." : "Or type your profile details..."}
-          value={textInput}
-          onChange={(e) => setTextInput(e.target.value)}
-          style={{
-            flex: 1,
-            background: "rgba(0, 0, 0, 0.2)",
-            border: "1px solid var(--border-glass)",
-            borderRadius: "var(--radius-md)",
-            padding: "0.75rem 1rem",
-            color: "var(--text-primary)",
-            outline: "none"
-          }}
-        />
-        <button type="submit" className="btn btn-primary" style={{ padding: "0.75rem" }}>
-          <Send size={16} />
-        </button>
-      </form>
-    </div>
+    </>
   );
 }

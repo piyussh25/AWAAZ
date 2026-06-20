@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from "react";
-import { Settings as SettingsIcon, Volume2, Award, ClipboardList, HelpCircle, Layers } from "lucide-react";
+import { Settings as SettingsIcon, Volume2, Award, ClipboardList, User, Layers } from "lucide-react";
 import { schemes } from "./data/schemes";
 import { matchSchemes } from "./utils/matchingEngine";
 import { parseUserProfile, generateVernacularSummary, getEmptyProfile, initGemini } from "./utils/gemini";
@@ -9,15 +9,16 @@ import SchemeCard from "./components/SchemeCard";
 import Settings from "./components/Settings";
 
 export default function App() {
-  const [language, setLanguage] = useState("hi"); // Default to Hindi for inclusive accessibility
+  const [language, setLanguage] = useState("hi"); // Default to Hindi
   const [apiKey, setApiKey] = useState("");
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [userProfile, setUserProfile] = useState(getEmptyProfile());
   const [isProcessing, setIsProcessing] = useState(false);
   const [aiResponse, setAiResponse] = useState("");
   const [activeTab, setActiveTab] = useState("all"); // 'all', 'eligible', 'near_match'
+  const [mobileView, setMobileView] = useState("schemes"); // 'schemes' or 'profile' for mobile views
 
-  // Attempt to initialize key from localStorage on mount
+  // Initialize key from localStorage
   useEffect(() => {
     const savedKey = localStorage.getItem("awaaz_gemini_key");
     if (savedKey) {
@@ -26,12 +27,12 @@ export default function App() {
     }
   }, []);
 
-  // Compute matched schemes reactively when profile updates
+  // Compute matched schemes reactively
   const matchedSchemesList = useMemo(() => {
     return matchSchemes(userProfile, schemes);
   }, [userProfile]);
 
-  // Recalculate filters
+  // Filter schemes based on activeTab
   const filteredSchemes = useMemo(() => {
     if (activeTab === "eligible") {
       return matchedSchemesList.filter((s) => s.status === "eligible");
@@ -39,20 +40,20 @@ export default function App() {
     if (activeTab === "near_match") {
       return matchedSchemesList.filter((s) => s.status === "near_match");
     }
-    return matchedSchemesList; // 'all' - shows eligible and near matches (filters out hard block ineligible)
+    return matchedSchemesList; 
   }, [matchedSchemesList, activeTab]);
 
-  // Main controller: Speech Transcription -> Profile Variable Merge -> Matching -> Speech Synthesis Text
+  // Main Pipeline controller
   const handleTranscriptReceived = async (transcript) => {
     setIsProcessing(true);
     setAiResponse("");
 
     try {
-      // 1. Send speech transcript to Gemini (or local regex parser fallback) to parse details
+      // 1. Parse details
       const parsedFields = await parseUserProfile(transcript, language);
-      console.log("Parsed profile parameters from voice:", parsedFields);
+      console.log("Parsed profile parameters:", parsedFields);
 
-      // 2. Merge extracted fields with current profile state (incrementally builds the profile!)
+      // 2. Merge details
       const mergedProfile = { ...userProfile };
       Object.keys(parsedFields).forEach((key) => {
         if (parsedFields[key] !== null && parsedFields[key] !== undefined) {
@@ -61,24 +62,25 @@ export default function App() {
       });
       setUserProfile(mergedProfile);
 
-      // 3. Recalculate match lists using the updated profile
+      // 3. Recalculate matches
       const newMatches = matchSchemes(mergedProfile, schemes);
-      
-      // Filter for only eligible/near_match schemes to explain to the user
       const actionableMatches = newMatches.filter(
         (m) => m.status === "eligible" || m.status === "near_match"
       );
 
-      // 4. Generate natural bilingual vocal advice/instructions script from Gemini
+      // 4. Generate vernacular summaries
       const guidanceAudioText = await generateVernacularSummary(actionableMatches, mergedProfile, language);
       setAiResponse(guidanceAudioText);
 
+      // If user speaks, jump them to the schemes tab automatically so they see results
+      setMobileView("schemes");
+
     } catch (error) {
-      console.error("Pipeline matching error:", error);
+      console.error("Transcription pipeline error:", error);
       setAiResponse(
         language === "hi"
-          ? "माफ़ कीजिये, आपकी आवाज़ को समझने में थोड़ी समस्या हुई। कृपया पुनः प्रयास करें या प्रोफ़ाइल में विवरण जाँचें।"
-          : "Apologies, there was an issue processing your profile. Please try speaking again or edit details in the inspector."
+          ? "माफ़ कीजिये, जानकारी समझने में समस्या हुई। कृपया पुनः प्रयास करें।"
+          : "Apologies, there was an issue processing your profile. Please try speaking again."
       );
     } finally {
       setIsProcessing(false);
@@ -87,7 +89,6 @@ export default function App() {
 
   const handleProfileChange = (updatedProfile) => {
     setUserProfile(updatedProfile);
-    // When manual changes happen, reset the AI voice response to prevent outdated audio playback
     setAiResponse("");
   };
 
@@ -103,6 +104,7 @@ export default function App() {
 
   return (
     <div className="app-container">
+      
       {/* Header Bar */}
       <header className="glass-panel app-header">
         <div className="brand">
@@ -116,7 +118,7 @@ export default function App() {
         </div>
 
         <div className="header-controls">
-          {/* Language Switcher */}
+          {/* Language selector */}
           <div className="lang-selector">
             <button 
               className={`lang-btn ${language === "hi" ? "active" : ""}`}
@@ -138,7 +140,7 @@ export default function App() {
             </button>
           </div>
 
-          {/* Settings Drawer Trigger */}
+          {/* Settings Trigger */}
           <button 
             className="btn" 
             onClick={() => setIsSettingsOpen(true)}
@@ -164,18 +166,29 @@ export default function App() {
         </div>
       </header>
 
+      {/* Mobile-Only Top Nav Tabs */}
+      <div className="mobile-view-tabs">
+        <button 
+          className={`mobile-tab-btn ${mobileView === "schemes" ? "active" : ""}`}
+          onClick={() => setMobileView("schemes")}
+        >
+          <Award size={16} />
+          <span>{language === "hi" ? "योजनाएं" : "Schemes"} ({filteredSchemes.length})</span>
+        </button>
+        <button 
+          className={`mobile-tab-btn ${mobileView === "profile" ? "active" : ""}`}
+          onClick={() => setMobileView("profile")}
+        >
+          <User size={16} />
+          <span>{language === "hi" ? "प्रोफ़ाइल" : "Profile Details"}</span>
+        </button>
+      </div>
+
       {/* Main Grid Panels */}
       <div className="dashboard-grid">
         
-        {/* Left Hand Column: Animated Orb & Speech Transcript */}
-        <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
-          <VoiceAssistant 
-            onTranscriptReceived={handleTranscriptReceived}
-            aiResponse={aiResponse}
-            language={language}
-            isProcessing={isProcessing}
-          />
-          
+        {/* Left Column (Profile Inspector) */}
+        <div className={`left-column-container ${mobileView === "profile" ? "active-mobile" : "inactive-mobile"}`}>
           <UserProfile 
             profile={userProfile}
             onProfileChange={handleProfileChange}
@@ -184,8 +197,8 @@ export default function App() {
           />
         </div>
 
-        {/* Right Hand Column: Matched Scheme Lists */}
-        <main className="results-panel">
+        {/* Right Column (Schemes Listing) */}
+        <main className={`right-column-container ${mobileView === "schemes" ? "active-mobile" : "inactive-mobile"}`}>
           <div className="schemes-section-header">
             <h3 style={{ display: "flex", alignItems: "center", gap: "0.5rem", fontSize: "1.25rem" }}>
               <Award size={20} className="text-gradient" />
@@ -196,13 +209,13 @@ export default function App() {
               </span>
             </h3>
 
-            {/* Filter Tabs */}
+            {/* Sub Filter tabs */}
             <div className="schemes-tabs">
               <button 
                 className={`tab-btn ${activeTab === "all" ? "active" : ""}`}
                 onClick={() => setActiveTab("all")}
               >
-                {language === "hi" ? "सभी योजनाएं" : "All Matches"}
+                {language === "hi" ? "सभी" : "All"}
               </button>
               <button 
                 className={`tab-btn ${activeTab === "eligible" ? "active" : ""}`}
@@ -214,16 +227,15 @@ export default function App() {
                 className={`tab-btn ${activeTab === "near_match" ? "active" : ""}`}
                 onClick={() => setActiveTab("near_match")}
               >
-                {language === "hi" ? "लगभग पात्र" : "Near Matches"}
+                {language === "hi" ? "निकट" : "Near"}
               </button>
             </div>
           </div>
 
-          {/* Scheme Cards Layout */}
+          {/* Card list */}
           <div className="schemes-list">
             {filteredSchemes.length > 0 ? (
               filteredSchemes.map((match) => (
-                // Filter out absolute ineligible cards in "all" view to avoid cluttering the interface
                 (match.status !== "ineligible" || activeTab === "all") && (
                   <SchemeCard 
                     key={match.scheme.scheme_id} 
@@ -238,12 +250,12 @@ export default function App() {
                 <ClipboardList className="empty-icon" />
                 <div>
                   <p style={{ fontWeight: "600", fontSize: "1.1rem", marginBottom: "0.25rem" }}>
-                    {language === "hi" ? "कोई मिलान नहीं मिला" : "No Matching Schemes"}
+                    {language === "hi" ? "कोई योजना नहीं मिली" : "No Matching Schemes"}
                   </p>
                   <p style={{ fontSize: "0.85rem", color: "var(--text-secondary)" }}>
                     {language === "hi" 
-                      ? "पात्र योजनाओं की सूची देखने के लिए कृपया माइक दबाकर बात करें या प्रोफ़ाइल विवरण भरें।" 
-                      : "Speak into the assistant or complete your profile details to search for schemes."}
+                      ? "नीचे माइक दबाकर बात करें या प्रोफ़ाइल विवरण भरें।" 
+                      : "Tap the microphone below to speak, or complete your profile details."}
                   </p>
                 </div>
               </div>
@@ -251,6 +263,14 @@ export default function App() {
           </div>
         </main>
       </div>
+
+      {/* Floating Bottom Drawer Voice Assistant */}
+      <VoiceAssistant 
+        onTranscriptReceived={handleTranscriptReceived}
+        aiResponse={aiResponse}
+        language={language}
+        isProcessing={isProcessing}
+      />
 
       {/* Settings Modal Drawer */}
       <Settings 
