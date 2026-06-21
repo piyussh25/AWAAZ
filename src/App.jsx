@@ -1,32 +1,20 @@
-import React, { useState, useEffect, useMemo } from "react";
-import { Settings as SettingsIcon, Volume2, Award, ClipboardList, ArrowLeft, CheckCircle2, AlertTriangle, Languages } from "lucide-react";
+import React, { useState, useMemo, useCallback } from "react";
+import { Volume2, Award, ClipboardList, ArrowLeft, CheckCircle2, AlertTriangle, Languages, Gauge } from "lucide-react";
 import { schemes } from "./data/schemes";
 import { matchSchemes } from "./utils/matchingEngine";
-import { parseUserProfile, generateVernacularSummary, getEmptyProfile, initGemini } from "./utils/gemini";
+import { parseUserProfile, generateVernacularSummary, getEmptyProfile } from "./utils/gemini";
 import VoiceAssistant from "./components/VoiceAssistant";
 import UserProfile from "./components/UserProfile";
 import SchemeCard from "./components/SchemeCard";
 import ConsolidatedDocs from "./components/ConsolidatedDocs";
-import Settings from "./components/Settings";
 
 export default function App() {
   const [language, setLanguage] = useState("hi"); // Default to Hindi
-  const [apiKey, setApiKey] = useState("");
-  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [userProfile, setUserProfile] = useState(getEmptyProfile());
   const [isProcessing, setIsProcessing] = useState(false);
   const [aiResponse, setAiResponse] = useState("");
   const [activeTab, setActiveTab] = useState("all"); // 'all', 'eligible', 'near_match'
   const [currentPage, setCurrentPage] = useState("home"); // 'home' or 'results'
-
-  // Initialize key from localStorage
-  useEffect(() => {
-    const savedKey = localStorage.getItem("awaaz_gemini_key");
-    if (savedKey) {
-      setApiKey(savedKey);
-      initGemini(savedKey);
-    }
-  }, []);
 
   // Compute matched schemes reactively
   const matchedSchemesList = useMemo(() => {
@@ -37,10 +25,15 @@ export default function App() {
   const stats = useMemo(() => {
     const eligibleCount = matchedSchemesList.filter(s => s.status === "eligible").length;
     const nearMatchCount = matchedSchemesList.filter(s => s.status === "near_match").length;
+    const actionable = matchedSchemesList.filter(s => s.status === "eligible" || s.status === "near_match");
+    const avgReadiness = actionable.length > 0
+      ? Math.round(actionable.reduce((sum, s) => sum + s.score, 0) / actionable.length)
+      : 0;
     return {
       eligible: eligibleCount,
       nearMatch: nearMatchCount,
-      total: eligibleCount + nearMatchCount
+      total: eligibleCount + nearMatchCount,
+      avgReadiness
     };
   }, [matchedSchemesList]);
 
@@ -56,7 +49,7 @@ export default function App() {
   }, [matchedSchemesList, activeTab]);
 
   // Main Pipeline controller
-  const handleTranscriptReceived = async (transcript) => {
+  const handleTranscriptReceived = useCallback(async (transcript) => {
     setIsProcessing(true);
     setAiResponse("");
 
@@ -84,8 +77,8 @@ export default function App() {
       const guidanceAudioText = await generateVernacularSummary(actionableMatches, mergedProfile, language);
       setAiResponse(guidanceAudioText);
 
-      // Smooth auto-navigation to results page after audio loads
-      setCurrentPage("results");
+      // Note: navigation to the results page is now triggered by VoiceAssistant
+      // once its "wrapping up" animation finishes, via onReadyToShowResults.
 
     } catch (error) {
       console.error("Redirection pipeline error:", error);
@@ -97,7 +90,13 @@ export default function App() {
     } finally {
       setIsProcessing(false);
     }
-  };
+  }, [language, userProfile]);
+
+  // Called by VoiceAssistant once its "wrapping up" animation finishes,
+  // so the page transition is in sync with what the user sees in the drawer.
+  const handleReadyToShowResults = useCallback(() => {
+    setCurrentPage("results");
+  }, []);
 
   const handleProfileChange = (updatedProfile) => {
     setUserProfile(updatedProfile);
@@ -111,17 +110,13 @@ export default function App() {
     setCurrentPage("home");
   };
 
-  const handleKeySave = (newKey) => {
-    setApiKey(newKey || "");
-  };
-
   // UI Localized Strings
   const i18n = {
     tagline: { hi: "யோஜனா ஜாகரூக்தா", en: "Scheme Accessibility", ta: "திட்ட விழிப்புணர்வு", te: "పథకాల అవగాహన" },
-    settings: { hi: "सेटिंग्स", en: "Settings", ta: "அமைப்புகள்", te: "సెట్టింగులు" },
     viewResults: { hi: "परिणाम देखें", en: "View Schemes Report", ta: "முடிவுகளைப் பார்க்கவும்", te: "ఫలితాలు చూడండి" },
     eligibleCount: { hi: "पात्र योजनाएं", en: "Eligible Schemes", ta: "தகுதியான திட்டங்கள்", te: "అర్హత గల పథకాలు" },
     nearMatchCount: { hi: "लगभग पात्र", en: "Near Matches", ta: "கிட்டத்தட்ட தகுதியானவை", te: "దాదాపు అర్హత ఉన్నవి" },
+    avgReadiness: { hi: "औसत तैयारी स्कोर", en: "Avg. Readiness Score", ta: "சராசரி தயார்நிலை மதிப்பெண்", te: "సగటు సంసిద్ధత స్కోరు" },
     backBtn: { hi: "वापस जाएँ (असिस्टेंट)", en: "Back to Assistant", ta: "பின்செல்லவும்", te: "తిరిగి వెళ్ళండి" },
     reportTitle: { hi: "आपके लिए अनुशंसित सरकारी योजनाएं", en: "Personalized Scheme Report", ta: "பரிந்துரைக்கப்பட்ட திட்டங்கள்", te: "వ్యక్తిగతీకరించిన పథకాల నివేదిక" },
     noMatches: { hi: "कोई पात्र योजना नहीं मिली", en: "No Matching Schemes Found", ta: "பொருத்தமான திட்டங்கள் எதுவும் இல்லை", te: "ఎటువంటి పథకాలు లభించలేదు" },
@@ -164,26 +159,6 @@ export default function App() {
             <button className={`lang-btn ${language === "ta" ? "active" : ""}`} onClick={() => setLanguage("ta")}>தமிழ்</button>
             <button className={`lang-btn ${language === "te" ? "active" : ""}`} onClick={() => setLanguage("te")}>తెలుగు</button>
           </div>
-
-          {/* Settings Trigger */}
-          <button className="btn" onClick={() => setIsSettingsOpen(true)} style={{ position: "relative" }}>
-            <SettingsIcon size={18} />
-            <span className="hide-on-mobile">{getTxt("settings")}</span>
-            {!apiKey && (
-              <span 
-                style={{
-                  position: "absolute",
-                  top: "-4px",
-                  right: "-4px",
-                  width: "10px",
-                  height: "10px",
-                  borderRadius: "50%",
-                  background: "var(--color-warning)",
-                  border: "2px solid var(--bg-main)"
-                }}
-              />
-            )}
-          </button>
         </div>
       </header>
 
@@ -284,28 +259,53 @@ export default function App() {
         <div className="page-transition-wrapper results-page-layout">
           
           {/* Header Action Row */}
-          <div className="results-header-row">
-            <button className="btn back-btn" onClick={() => setCurrentPage("home")}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "1rem", marginBottom: "1rem" }}>
+            <button className="btn back-btn" onClick={() => setCurrentPage("home")} style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
               <ArrowLeft size={16} />
               <span>{getTxt("backBtn")}</span>
             </button>
-            <h2 className="text-gradient report-title-text">{getTxt("reportTitle")}</h2>
+            <h2 style={{ fontSize: "1.6rem", fontWeight: "700", background: "linear-gradient(to right, var(--accent-primary), var(--accent-secondary))", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", margin: "0" }}>
+              {getTxt("reportTitle")}
+            </h2>
+            <div style={{ width: "120px" }}></div>
           </div>
 
           {/* Quick Stats Cards Widget */}
-          <div className="results-stats-row">
-            <div className="glass-panel stat-card success">
-              <CheckCircle2 className="stat-icon" size={24} />
-              <div className="stat-info">
-                <span className="stat-label">{getTxt("eligibleCount")}</span>
-                <span className="stat-number">{stats.eligible}</span>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "1rem", marginBottom: "1.5rem" }}>
+            <div className="glass-panel" style={{ padding: "1.25rem", borderTop: "3px solid var(--color-success)", display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                <CheckCircle2 size={20} style={{ color: "var(--color-success)" }} />
+                <span style={{ fontSize: "0.8rem", fontWeight: "700", textTransform: "uppercase", color: "var(--text-muted)", letterSpacing: "0.05em" }}>
+                  {getTxt("eligibleCount")}
+                </span>
               </div>
+              <span style={{ fontSize: "2rem", fontWeight: "800", color: "var(--color-success)" }}>
+                {stats.eligible}
+              </span>
             </div>
-            <div className="glass-panel stat-card warning">
-              <AlertTriangle className="stat-icon" size={24} />
-              <div className="stat-info">
-                <span className="stat-label">{getTxt("nearMatchCount")}</span>
-                <span className="stat-number">{stats.nearMatch}</span>
+            <div className="glass-panel" style={{ padding: "1.25rem", borderTop: "3px solid var(--color-warning)", display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                <AlertTriangle size={20} style={{ color: "var(--color-warning)" }} />
+                <span style={{ fontSize: "0.8rem", fontWeight: "700", textTransform: "uppercase", color: "var(--text-muted)", letterSpacing: "0.05em" }}>
+                  {getTxt("nearMatchCount")}
+                </span>
+              </div>
+              <span style={{ fontSize: "2rem", fontWeight: "800", color: "var(--color-warning)" }}>
+                {stats.nearMatch}
+              </span>
+            </div>
+            <div className="glass-panel" style={{ padding: "1.25rem", borderTop: "3px solid var(--accent-primary)", display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                <Gauge size={20} style={{ color: "var(--accent-primary)" }} />
+                <span style={{ fontSize: "0.8rem", fontWeight: "700", textTransform: "uppercase", color: "var(--text-muted)", letterSpacing: "0.05em" }}>
+                  {getTxt("avgReadiness")}
+                </span>
+              </div>
+              <div className="readiness-stat-value">
+                <span style={{ fontSize: "2rem", fontWeight: "800", color: "var(--accent-primary)" }}>
+                  {stats.avgReadiness}
+                </span>
+                <span className="unit">/100</span>
               </div>
             </div>
           </div>
@@ -315,11 +315,23 @@ export default function App() {
             
             {/* Left Column: Matches list */}
             <div className="right-column-container">
-              <div className="schemes-section-header" style={{ marginBottom: "1rem" }}>
-                <h3 style={{ display: "flex", alignItems: "center", gap: "0.5rem", fontSize: "1.15rem" }}>
-                  <Award size={20} className="text-gradient" />
-                  <span>{language === "hi" ? "पात्रता रिपोर्ट" : "Matches Summary"}</span>
-                </h3>
+              <div style={{ marginBottom: "1.5rem" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "1rem", marginBottom: "1rem" }}>
+                  <h3 style={{ display: "flex", alignItems: "center", gap: "0.5rem", fontSize: "1.25rem", fontWeight: "700", margin: "0" }}>
+                    <Award size={22} style={{ color: "var(--accent-primary)" }} />
+                    <span>{language === "hi" ? "पात्र योजनाएं" : "Your Schemes"}</span>
+                  </h3>
+                  <span style={{ 
+                    fontSize: "0.8rem", 
+                    background: "rgba(79, 70, 229, 0.08)", 
+                    color: "var(--accent-primary)", 
+                    padding: "0.3rem 0.75rem", 
+                    borderRadius: "50px",
+                    fontWeight: "700"
+                  }}>
+                    {filteredSchemes.length} {language === "hi" ? "योजनाएं" : "schemes"}
+                  </span>
+                </div>
                 
                 {/* Tabs */}
                 <div className="schemes-tabs">
@@ -366,11 +378,17 @@ export default function App() {
                 language={language}
               />
               
-              {/* Collapsible Mini profile overrides drawer in results page */}
-              <div className="glass-panel" style={{ padding: "1.25rem" }}>
-                <h4 style={{ fontSize: "0.9rem", fontWeight: "700", marginBottom: "0.75rem", display: "flex", alignItems: "center", gap: "0.5rem" }}>
-                  <span className="live-dot" style={{ background: "var(--accent-primary)" }}></span>
-                  <span>{language === "hi" ? "विवरण बदलें (त्वरित सुधार)" : "Tweak Profile Details"}</span>
+              {/* Profile Editor */}
+              <div className="glass-panel" style={{ padding: "1.5rem" }}>
+                <h4 style={{ fontSize: "0.95rem", fontWeight: "700", marginBottom: "1rem", display: "flex", alignItems: "center", gap: "0.5rem", margin: "0 0 1rem 0" }}>
+                  <span style={{ 
+                    width: "8px", 
+                    height: "8px", 
+                    borderRadius: "50%", 
+                    background: "var(--accent-primary)", 
+                    boxShadow: "0 0 8px rgba(79, 70, 229, 0.4)"
+                  }}></span>
+                  <span>{language === "hi" ? "आपकी प्रोफ़ाइल" : "Your Profile"}</span>
                 </h4>
                 <UserProfile 
                   profile={userProfile}
@@ -391,13 +409,7 @@ export default function App() {
         aiResponse={aiResponse}
         language={language}
         isProcessing={isProcessing}
-      />
-
-      {/* Settings Drawer */}
-      <Settings 
-        isOpen={isSettingsOpen} 
-        onClose={() => setIsSettingsOpen(false)}
-        onKeySave={handleKeySave}
+        onReadyToShowResults={handleReadyToShowResults}
       />
     </div>
   );
