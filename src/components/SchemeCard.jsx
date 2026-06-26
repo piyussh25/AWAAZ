@@ -32,9 +32,27 @@ export default function SchemeCard({ matchResult, language, userProfile }) {
   // Get local summary text based on language
   const summaryText = scheme.language_summary[language] || scheme.language_summary.en;
 
+  // Per-scheme readiness score (0-100), derived from the matching engine's
+  // analysis of the user's spoken description / profile.
+  const readiness = Math.max(0, Math.min(100, Math.round(score ?? 0)));
+  const readinessColor =
+    readiness >= 90
+      ? "var(--color-success)"
+      : readiness >= 50
+        ? "var(--color-warning)"
+        : "var(--color-danger)";
+  const readinessLabel =
+    language === "hi"
+      ? "तैयारी स्कोर"
+      : language === "ta"
+        ? "தயார்நிலை மதிப்பெண்"
+        : language === "te"
+          ? "సంసిద్ధత స్కోరు"
+          : "Readiness Score";
+
   return (
     <div className={`glass-panel scheme-card ${status}`}>
-      
+
       {/* Header */}
       <div className="scheme-card-header">
         <div className="scheme-title-block">
@@ -44,6 +62,63 @@ export default function SchemeCard({ matchResult, language, userProfile }) {
         <span className={`scheme-badge ${status}`}>
           {statusLabels[status]}
         </span>
+      </div>
+
+      {/* Readiness Score (per scheme) */}
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: "0.75rem",
+          padding: "0.6rem 0.85rem",
+          borderRadius: "var(--radius-md, 10px)",
+          background: "rgba(79, 70, 229, 0.06)",
+          border: "1px solid rgba(79, 70, 229, 0.15)",
+        }}
+      >
+        <div style={{ flex: 1 }}>
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "baseline",
+              marginBottom: "0.3rem",
+            }}
+          >
+            <span
+              style={{
+                fontSize: "0.72rem",
+                fontWeight: 700,
+                textTransform: "uppercase",
+                letterSpacing: "0.05em",
+                color: "var(--text-secondary)",
+              }}
+            >
+              {readinessLabel}
+            </span>
+            <span style={{ fontSize: "0.95rem", fontWeight: 800, color: readinessColor }}>
+              {readiness}<span style={{ fontSize: "0.7rem", color: "var(--text-muted)" }}>/100</span>
+            </span>
+          </div>
+          <div
+            style={{
+              width: "100%",
+              height: "6px",
+              borderRadius: "999px",
+              background: "rgba(0,0,0,0.06)",
+              overflow: "hidden",
+            }}
+          >
+            <div
+              style={{
+                width: `${readiness}%`,
+                height: "100%",
+                background: readinessColor,
+                transition: "width 400ms ease",
+              }}
+            />
+          </div>
+        </div>
       </div>
 
       {/* Vernacular Summary Statement */}

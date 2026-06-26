@@ -1,5 +1,9 @@
-import React, { useState, useMemo, useCallback } from "react";
-import { Volume2, Award, ClipboardList, ArrowLeft, CheckCircle2, AlertTriangle, Languages, Gauge } from "lucide-react";
+import React, { useState, useMemo, useCallback, useEffect, useRef } from "react";
+import {
+  Award, ClipboardList, ArrowLeft, CheckCircle2, AlertTriangle,
+  Gauge, ChevronDown, Mic, Sparkles, Users, Heart,
+  Home as HomeIcon, BookOpen, Info, FileText, ShieldCheck, MessageCircle
+} from "lucide-react";
 import { schemes } from "./data/schemes";
 import { matchSchemes } from "./utils/matchingEngine";
 import { parseUserProfile, generateVernacularSummary, getEmptyProfile } from "./utils/gemini";
@@ -8,20 +12,37 @@ import UserProfile from "./components/UserProfile";
 import SchemeCard from "./components/SchemeCard";
 import ConsolidatedDocs from "./components/ConsolidatedDocs";
 
+const LANGS = [
+  { code: "hi", label: "हिन्दी", english: "Hindi" },
+  { code: "en", label: "English", english: "English" },
+  { code: "ta", label: "தமிழ்", english: "Tamil" },
+  { code: "te", label: "తెలుగు", english: "Telugu" },
+];
+
+function pick(obj, lang) {
+  return obj?.[lang] || obj?.en || "";
+}
+
 export default function App() {
-  const [language, setLanguage] = useState("hi"); // Default to Hindi
+  const [language, setLanguage] = useState("hi");
   const [userProfile, setUserProfile] = useState(getEmptyProfile());
   const [isProcessing, setIsProcessing] = useState(false);
   const [aiResponse, setAiResponse] = useState("");
-  const [activeTab, setActiveTab] = useState("all"); // 'all', 'eligible', 'near_match'
-  const [currentPage, setCurrentPage] = useState("home"); // 'home' or 'results'
+  const [activeTab, setActiveTab] = useState("all");
+  const [currentPage, setCurrentPage] = useState("home"); // home | results | guide | about
+  const [langOpen, setLangOpen] = useState(false);
+  const langRef = useRef(null);
 
-  // Compute matched schemes reactively
-  const matchedSchemesList = useMemo(() => {
-    return matchSchemes(userProfile, schemes);
-  }, [userProfile]);
+  useEffect(() => {
+    const onClick = (e) => {
+      if (langRef.current && !langRef.current.contains(e.target)) setLangOpen(false);
+    };
+    document.addEventListener("mousedown", onClick);
+    return () => document.removeEventListener("mousedown", onClick);
+  }, []);
 
-  // Compute count metrics for stats cards
+  const matchedSchemesList = useMemo(() => matchSchemes(userProfile, schemes), [userProfile]);
+
   const stats = useMemo(() => {
     const eligibleCount = matchedSchemesList.filter(s => s.status === "eligible").length;
     const nearMatchCount = matchedSchemesList.filter(s => s.status === "near_match").length;
@@ -29,382 +50,431 @@ export default function App() {
     const avgReadiness = actionable.length > 0
       ? Math.round(actionable.reduce((sum, s) => sum + s.score, 0) / actionable.length)
       : 0;
-    return {
-      eligible: eligibleCount,
-      nearMatch: nearMatchCount,
-      total: eligibleCount + nearMatchCount,
-      avgReadiness
-    };
+    return { eligible: eligibleCount, nearMatch: nearMatchCount, total: eligibleCount + nearMatchCount, avgReadiness };
   }, [matchedSchemesList]);
 
-  // Filter schemes based on activeTab
   const filteredSchemes = useMemo(() => {
-    if (activeTab === "eligible") {
-      return matchedSchemesList.filter((s) => s.status === "eligible");
-    }
-    if (activeTab === "near_match") {
-      return matchedSchemesList.filter((s) => s.status === "near_match");
-    }
-    return matchedSchemesList; 
+    if (activeTab === "eligible") return matchedSchemesList.filter((s) => s.status === "eligible");
+    if (activeTab === "near_match") return matchedSchemesList.filter((s) => s.status === "near_match");
+    return matchedSchemesList;
   }, [matchedSchemesList, activeTab]);
 
-  // Main Pipeline controller
   const handleTranscriptReceived = useCallback(async (transcript) => {
     setIsProcessing(true);
     setAiResponse("");
-
     try {
-      // 1. Parse transcript
       const parsedFields = await parseUserProfile(transcript, language);
-      console.log("Parsed profile fields:", parsedFields);
-
-      // 2. Merge profile
       const mergedProfile = { ...userProfile };
       Object.keys(parsedFields).forEach((key) => {
-        if (parsedFields[key] !== null && parsedFields[key] !== undefined) {
-          mergedProfile[key] = parsedFields[key];
-        }
+        if (parsedFields[key] !== null && parsedFields[key] !== undefined) mergedProfile[key] = parsedFields[key];
       });
       setUserProfile(mergedProfile);
-
-      // 3. Recalculate matches
       const newMatches = matchSchemes(mergedProfile, schemes);
-      const actionableMatches = newMatches.filter(
-        (m) => m.status === "eligible" || m.status === "near_match"
-      );
-
-      // 4. Generate summaries
+      const actionableMatches = newMatches.filter((m) => m.status === "eligible" || m.status === "near_match");
       const guidanceAudioText = await generateVernacularSummary(actionableMatches, mergedProfile, language);
       setAiResponse(guidanceAudioText);
-
-      // Note: navigation to the results page is now triggered by VoiceAssistant
-      // once its "wrapping up" animation finishes, via onReadyToShowResults.
-
     } catch (error) {
       console.error("Redirection pipeline error:", error);
-      setAiResponse(
-        language === "hi"
-          ? "माफ़ कीजिये, आपकी आवाज़ को समझने में त्रुटि हुई।"
-          : "Apologies, there was an issue processing your voice data."
-      );
+      setAiResponse(language === "hi"
+        ? "माफ़ कीजिये, आपकी आवाज़ को समझने में त्रुटि हुई।"
+        : "Apologies, there was an issue processing your voice data.");
     } finally {
       setIsProcessing(false);
     }
   }, [language, userProfile]);
 
-  // Called by VoiceAssistant once its "wrapping up" animation finishes,
-  // so the page transition is in sync with what the user sees in the drawer.
-  const handleReadyToShowResults = useCallback(() => {
-    setCurrentPage("results");
-  }, []);
-
-  const handleProfileChange = (updatedProfile) => {
-    setUserProfile(updatedProfile);
-    setAiResponse("");
-  };
-
+  const handleReadyToShowResults = useCallback(() => setCurrentPage("results"), []);
+  const handleProfileChange = (updatedProfile) => { setUserProfile(updatedProfile); setAiResponse(""); };
   const handleResetProfile = () => {
     setUserProfile(getEmptyProfile());
-    setAiResponse("");
-    setActiveTab("all");
-    setCurrentPage("home");
+    setAiResponse(""); setActiveTab("all"); setCurrentPage("home");
   };
 
-  // UI Localized Strings
   const i18n = {
-    tagline: { hi: "யோஜனா ஜாகரூக்தா", en: "Scheme Accessibility", ta: "திட்ட விழிப்புணர்வு", te: "పథకాల అవగాహన" },
-    viewResults: { hi: "परिणाम देखें", en: "View Schemes Report", ta: "முடிவுகளைப் பார்க்கவும்", te: "ఫలితాలు చూడండి" },
+    tagline: { hi: "योजना जागरूकता", en: "Schemes in your voice", ta: "திட்ட விழிப்புணர்வு", te: "పథకాల అవగాహన" },
+    navHome: { hi: "होम", en: "Home", ta: "முகப்பு", te: "హోమ్" },
+    navGuide: { hi: "गाइड", en: "Guide", ta: "வழிகாட்டி", te: "గైడ్" },
+    navAbout: { hi: "हमारे बारे में", en: "About", ta: "எங்களைப் பற்றி", te: "మా గురించి" },
+    navResults: { hi: "मेरी योजनाएं", en: "My Schemes", ta: "என் திட்டங்கள்", te: "నా పథకాలు" },
+    viewResults: { hi: "परिणाम देखें", en: "View Schemes", ta: "முடிவுகள்", te: "ఫలితాలు" },
     eligibleCount: { hi: "पात्र योजनाएं", en: "Eligible Schemes", ta: "தகுதியான திட்டங்கள்", te: "అర్హత గల పథకాలు" },
     nearMatchCount: { hi: "लगभग पात्र", en: "Near Matches", ta: "கிட்டத்தட்ட தகுதியானவை", te: "దాదాపు అర్హత ఉన్నవి" },
-    avgReadiness: { hi: "औसत तैयारी स्कोर", en: "Avg. Readiness Score", ta: "சராசரி தயார்நிலை மதிப்பெண்", te: "సగటు సంసిద్ధత స్కోరు" },
-    backBtn: { hi: "वापस जाएँ (असिस्टेंट)", en: "Back to Assistant", ta: "பின்செல்லவும்", te: "తిరిగి వెళ్ళండి" },
-    reportTitle: { hi: "आपके लिए अनुशंसित सरकारी योजनाएं", en: "Personalized Scheme Report", ta: "பரிந்துரைக்கப்பட்ட திட்டங்கள்", te: "వ్యక్తిగతీకరించిన పథకాల నివేదిక" },
-    noMatches: { hi: "कोई पात्र योजना नहीं मिली", en: "No Matching Schemes Found", ta: "பொருத்தமான திட்டங்கள் எதுவும் இல்லை", te: "ఎటువంటి పథకాలు లభించలేదు" },
-    resultsBannerTitle: {
-      hi: "योजना मिलान रिपोर्ट तैयार है!",
-      en: "Scheme Report is Ready!",
-      ta: "திட்ட அறிக்கை தயாராக உள்ளது!",
-      te: "పథకాల నివేదిక సిద్ధంగా ఉంది!"
+    avgReadiness: { hi: "औसत तैयारी स्कोर", en: "Avg. Readiness Score", ta: "சராசரி தயார்நிலை", te: "సగటు సంసిద్ధత" },
+    backBtn: { hi: "वापस होम पर", en: "Back to Home", ta: "முகப்புக்கு", te: "హోమ్‌కు" },
+    reportTitle: { hi: "आपके लिए अनुशंसित योजनाएं", en: "Your Scheme Report", ta: "உங்கள் திட்ட அறிக்கை", te: "మీ పథకాల నివేదిక" },
+    noMatches: { hi: "अभी कोई योजना नहीं — बस माइक दबाकर बोलिए!", en: "No schemes yet — just tap the mic and speak!", ta: "திட்டங்கள் இல்லை — மைக்கை அழுத்தி பேசவும்", te: "ఇంకా పథకాలు లేవు — మైక్ నొక్కి మాట్లాడండి" },
+    heroKicker: { hi: "आपकी आवाज़, आपका हक़", en: "Your voice, your right", ta: "உங்கள் குரல், உங்கள் உரிமை", te: "మీ గొంతు, మీ హక్కు" },
+    heroTitle: {
+      hi: "बस बोलिए — हम आपकी सरकारी योजनाएं ढूंढ देंगे।",
+      en: "Just speak — we'll find the government schemes meant for you.",
+      ta: "வெறும் பேசுங்கள் — உங்களுக்கான அரசுத் திட்டங்களை நாங்கள் கண்டுபிடிப்போம்.",
+      te: "మాట్లాడండి చాలు — మీకు సరిపోయే ప్రభుత్వ పథకాలను మేము కనుగొంటాం."
     },
-    resultsBannerDesc: {
-      hi: `आपके विवरण के अनुसार ${stats.eligible} पात्र योजनाएं और ${stats.nearMatch} निकटतम योजनाएं पाई गई हैं।`,
-      en: `Based on your profile, we found ${stats.eligible} eligible schemes and ${stats.nearMatch} potential near-matches.`,
-      ta: `உங்கள் விவரங்களின்படி ${stats.eligible} தகுதியான திட்டங்கள் மற்றும் ${stats.nearMatch} கிட்டத்தட்ட தகுதியான திட்டங்கள் உள்ளன.`,
-      te: `మీ ప్రొఫైల్ ప్రకారం ${stats.eligible} అర్హత గల పథకాలు మరియు ${stats.nearMatch} దాదాపు అర్హత ఉన్న పథకాలు లభించాయి.`
-    }
+    heroSub: {
+      hi: "कोई फ़ॉर्म नहीं, कोई पढ़ाई-लिखाई नहीं। अपनी भाषा में बताइए — उम्र, काम, और आमदनी। बाकी आवाज़ संभाल लेगा।",
+      en: "No forms, no jargon. Tell us in your language — your age, work and income. Awaaz handles the rest.",
+      ta: "படிவங்கள் இல்லை, கடினம் இல்லை. உங்கள் மொழியில் வயது, வேலை, வருமானம் சொல்லுங்கள். மீதியை Awaaz பார்த்துக்கொள்ளும்.",
+      te: "ఫారాలు లేవు, కష్టం లేదు. మీ భాషలో వయసు, పని, ఆదాయం చెప్పండి. మిగతాది Awaaz చూసుకుంటుంది."
+    },
+    heroCta: { hi: "अभी बोलना शुरू करें", en: "Start speaking now", ta: "இப்போது பேசுங்கள்", te: "ఇప్పుడే మాట్లాడండి" },
+    heroCta2: { hi: "गाइड पढ़ें", en: "Read the guide", ta: "வழிகாட்டி", te: "గైడ్ చూడండి" },
+    feat1Title: { hi: "अपनी भाषा में बोलिए", en: "Speak your language", ta: "உங்கள் மொழியில்", te: "మీ భాషలో" },
+    feat1Body: { hi: "हिन्दी, English, தமிழ், తెలుగు — आप जैसे बोलते हैं वैसे ही समझा जाएगा।", en: "Hindi, English, Tamil, Telugu — talk the way you actually talk.", ta: "எப்படி பேசுகிறீர்களோ அப்படியே புரிந்துகொள்ளும்.", te: "మీరు ఎలా మాట్లాడితే అలాగే అర్థమవుతుంది." },
+    feat2Title: { hi: "तुरंत मिलान", en: "Instant matching", ta: "உடனடி பொருத்தம்", te: "తక్షణ సరిపోలిక" },
+    feat2Body: { hi: "हर योजना के लिए तैयारी स्कोर — किसमें आप पूरी तरह पात्र हैं, किसमें थोड़ी कमी है।", en: "A readiness score for every scheme — see what fits you fully or partly.", ta: "ஒவ்வொரு திட்டத்திற்கும் தயார்நிலை மதிப்பெண்.", te: "ప్రతి పథకానికి సంసిద్ధత స్కోర్." },
+    feat3Title: { hi: "एक ही जगह दस्तावेज़", en: "Documents in one place", ta: "ஆவணங்கள் ஒரே இடத்தில்", te: "పత్రాలు ఒకే చోట" },
+    feat3Body: { hi: "जो कागज़ चाहिए, उनकी एक साफ़ सूची — दौड़-भाग कम।", en: "A clean checklist of papers you'll need — less running around.", ta: "தேவையான ஆவணங்களின் தெளிவான பட்டியல்.", te: "అవసరమైన పత్రాల జాబితా." },
+    builtFor: { hi: "किसके लिए?", en: "Built for", ta: "யாருக்காக?", te: "ఎవరి కోసం?" },
+    audience: { hi: "किसान, मज़दूर, छोटे दुकानदार, गृहिणियाँ, बुज़ुर्ग — हर वो इंसान जिसके पास हक़ है, पर पता नहीं।", en: "Farmers, workers, small shopkeepers, homemakers and elders — everyone with a right but no roadmap.", ta: "விவசாயிகள், தொழிலாளர்கள், கடைக்காரர்கள், வீட்டம்மாக்கள், மூத்தோர் — அனைவருக்கும்.", te: "రైతులు, కార్మికులు, చిన్న వ్యాపారులు, గృహిణులు, వృద్ధులు — అందరికీ." },
+    guideTitle: { hi: "आवाज़ असिस्टेंट कैसे काम करता है", en: "How the voice assistant works", ta: "குரல் அசிஸ்டண்ட் எப்படி வேலை செய்கிறது", te: "వాయిస్ అసిస్టెంట్ ఎలా పనిచేస్తుంది" },
+    guideIntro: { hi: "तीन सीधे कदम। बस।", en: "Three simple steps. That's it.", ta: "மூன்று எளிய படிகள்.", te: "మూడు సులభమైన దశలు." },
+    step1Title: { hi: "1. नीचे माइक दबाएँ", en: "1. Tap the mic below", ta: "1. மைக்கை அழுத்தவும்", te: "1. మైక్ నొక్కండి" },
+    step1Body: { hi: "स्क्रीन के नीचे नीला कैप्सूल दिखेगा — उसे दबाते ही असिस्टेंट सुनना शुरू कर देगा।", en: "A blue capsule sits at the bottom of the screen — tap it and the assistant starts listening.", ta: "திரையின் கீழ் நீல பட்டன் — அழுத்தினால் கேட்க ஆரம்பிக்கும்.", te: "క్రింద నీలి బటన్ నొక్కితే వినడం మొదలవుతుంది." },
+    step2Title: { hi: "2. खुलकर बोलिए", en: "2. Speak freely", ta: "2. தாராளமாக பேசுங்கள்", te: "2. స్వేచ్ఛగా మాట్లాడండి" },
+    step2Body: { hi: "जैसे आप किसी दोस्त से बात करते हैं वैसे ही बोलिए। उम्र, काम, परिवार, ज़मीन, आमदनी — जो याद आए।", en: "Talk like you would to a friend — your age, work, family, land, income. Whatever you remember.", ta: "நண்பரிடம் பேசுவது போல — வயது, வேலை, குடும்பம், நிலம், வருமானம்.", te: "స్నేహితుడితో మాట్లాడినట్టు — వయసు, పని, కుటుంబం, భూమి, ఆదాయం." },
+    step3Title: { hi: "3. रिज़ल्ट देखिए", en: "3. See your results", ta: "3. முடிவுகளைப் பாருங்கள்", te: "3. ఫలితాలు చూడండి" },
+    step3Body: { hi: "बोलना खत्म होते ही 2–3 सेकंड में आपका डैशबोर्ड खुल जाएगा — हर योजना का तैयारी स्कोर साथ में।", en: "Once you stop, your dashboard opens in 2–3 seconds — with a readiness score for each scheme.", ta: "பேசி முடித்ததும் 2–3 வினாடிகளில் டாஷ்போர்டு திறக்கும்.", te: "మాట్లాడిన 2–3 సెకన్లలో డాష్‌బోర్డ్ తెరుచుకుంటుంది." },
+    tipsTitle: { hi: "बेहतर रिज़ल्ट के लिए छोटी सलाह", en: "Tips for better results", ta: "சிறந்த முடிவுகளுக்கு", te: "మంచి ఫలితాల కోసం" },
+    tip1: { hi: "शांत जगह से बोलें, माइक की अनुमति ज़रूर दें।", en: "Speak from a quiet place and allow mic access.", ta: "அமைதியான இடம், மைக் அனுமதி.", te: "ప్రశాంత ప్రదేశం, మైక్ అనుమతి." },
+    tip2: { hi: "एक वाक्य में बहुत कुछ बता सकते हैं — \"मैं 42 साल का किसान हूँ, 1 एकड़ ज़मीन है\"।", en: "One sentence can carry a lot — \"I'm a 42 year old farmer with 1 acre of land\".", ta: "ஒரே வாக்கியத்தில் — \"நான் 42 வயது விவசாயி, 1 ஏக்கர் நிலம்\".", te: "ఒక వాక్యం చాలు — \"నేను 42 ఏళ్ల రైతు, 1 ఎకరం భూమి\"." },
+    tip3: { hi: "गलती हो जाए तो दोबारा बोल सकते हैं — पुरानी जानकारी अपने आप अपडेट होगी।", en: "Made a mistake? Just speak again — old details auto-update.", ta: "தவறு என்றால் மறுபடியும் பேசுங்கள்.", te: "తప్పయితే మళ్ళీ మాట్లాడండి." },
+    aboutTitle: { hi: "Awaaz के बारे में", en: "About Awaaz", ta: "Awaaz பற்றி", te: "Awaaz గురించి" },
+    aboutLead: {
+      hi: "Awaaz उन करोड़ों लोगों के लिए बनी है जिनके पास सरकारी हक़ तो हैं, लेकिन फ़ॉर्म, भाषा और दफ्तरों की भीड़ बीच में आ जाती है।",
+      en: "Awaaz exists for the millions who have government rights — but forms, jargon and queues stand in between.",
+      ta: "Awaaz அரசு உரிமைகள் இருந்தும் படிவம், மொழி, வரிசை இடையில் வரும் கோடிக்கணக்கானவர்களுக்கானது.",
+      te: "ప్రభుత్వ హక్కులు ఉన్నా ఫారాలు, భాష, క్యూలు అడ్డుపడే కోట్లాదిమంది కోసం Awaaz."
+    },
+    missionTitle: { hi: "हमारा मक़सद", en: "Our mission", ta: "எங்கள் நோக்கம்", te: "మా లక్ష్యం" },
+    missionBody: {
+      hi: "एक ऐसा साथी जो आपकी भाषा बोले, आपको जज न करे, और सिर्फ़ इतना बताए — \"यह योजना आपकी है, और इस तरह मिल सकती है।\"",
+      en: "A companion that speaks your language, never judges, and simply tells you — \"this scheme is yours, here's how to claim it.\"",
+      ta: "உங்கள் மொழி பேசும், தீர்ப்பு சொல்லாத, \"இந்த திட்டம் உங்களுடையது\" என்று சொல்லும் துணை.",
+      te: "మీ భాష మాట్లాడే, తీర్పు చెప్పని, \"ఈ పథకం మీది\" అని చెప్పే తోడు."
+    },
+    valuesTitle: { hi: "हम किस पर भरोसा करते हैं", en: "What we stand for", ta: "எங்கள் கொள்கைகள்", te: "మేము నమ్మే విలువలు" },
+    val1: { hi: "गरिमा पहले", en: "Dignity first", ta: "மரியாதை முதல்", te: "గౌరవం మొదట" },
+    val1Body: { hi: "कोई जज नहीं। कोई जटिल सवाल नहीं।", en: "No judgement. No complicated questions.", ta: "தீர்ப்பு இல்லை.", te: "తీర్పు లేదు." },
+    val2: { hi: "भरोसेमंद जानकारी", en: "Trustworthy info", ta: "நம்பகமான தகவல்", te: "నమ్మదగిన సమాచారం" },
+    val2Body: { hi: "केवल सरकारी स्रोतों पर आधारित।", en: "Sourced only from official government data.", ta: "அரசு ஆதாரத்திலிருந்து மட்டும்.", te: "ప్రభుత్వ మూలాల నుండే." },
+    val3: { hi: "गोपनीयता", en: "Privacy", ta: "தனியுரிமை", te: "గోప్యత" },
+    val3Body: { hi: "आपकी आवाज़, आपका डेटा — किसी और के पास नहीं जाता।", en: "Your voice and data stay with you. We don't share.", ta: "உங்கள் தரவு உங்களிடமே.", te: "మీ డేటా మీతోనే." },
   };
 
-  const getTxt = (key) => i18n[key]?.[language] || i18n[key]?.en || "";
+  const t = (k) => pick(i18n[k], language);
 
-  return (
-    <div className="app-container">
-      
-      {/* Header Bar */}
-      <header className="glass-panel app-header">
-        <div className="brand">
-          <div className="brand-logo-container">
-            <Volume2 size={24} style={{ color: "#fff" }} />
+  // ============== PAGES ==============
+  const HomePage = (
+    <div className="page-transition-wrapper">
+      <section className="hero-wrap">
+        <div className="hero-blob blob1" />
+        <div className="hero-blob blob2" />
+        <div className="hero-inner">
+          <span className="hero-kicker">
+            <Sparkles size={14} /> {t("heroKicker")}
+          </span>
+          <h1 className="hero-title">{t("heroTitle")}</h1>
+          <p className="hero-sub">{t("heroSub")}</p>
+          <div className="hero-cta-row">
+            <button className="btn btn-primary btn-lg" onClick={() => {
+              window.scrollTo({ top: document.body.scrollHeight, behavior: "smooth" });
+            }}>
+              <Mic size={18} /> {t("heroCta")}
+            </button>
+            <button className="btn btn-ghost btn-lg" onClick={() => setCurrentPage("guide")}>
+              <BookOpen size={18} /> {t("heroCta2")}
+            </button>
           </div>
-          <div>
-            <h1 className="brand-text">Awaaz</h1>
-            <span className="brand-tagline">{getTxt("tagline")}</span>
+
+          {stats.total > 0 && (
+            <div className="hero-readout glass-panel" onClick={() => setCurrentPage("results")}>
+              <Award size={18} />
+              <span>{stats.eligible} {t("eligibleCount")} • {stats.nearMatch} {t("nearMatchCount")}</span>
+              <span className="hero-readout-cta">{t("viewResults")} →</span>
+            </div>
+          )}
+        </div>
+      </section>
+
+      <section className="feature-grid">
+        <div className="feature-card glass-panel">
+          <div className="feature-icon" style={{ background: "rgba(79,70,229,0.12)", color: "var(--accent-primary)" }}>
+            <MessageCircle size={22} />
+          </div>
+          <h3>{t("feat1Title")}</h3>
+          <p>{t("feat1Body")}</p>
+        </div>
+        <div className="feature-card glass-panel">
+          <div className="feature-icon" style={{ background: "rgba(5,150,105,0.12)", color: "var(--color-success)" }}>
+            <Gauge size={22} />
+          </div>
+          <h3>{t("feat2Title")}</h3>
+          <p>{t("feat2Body")}</p>
+        </div>
+        <div className="feature-card glass-panel">
+          <div className="feature-icon" style={{ background: "rgba(217,119,6,0.12)", color: "var(--color-warning)" }}>
+            <FileText size={22} />
+          </div>
+          <h3>{t("feat3Title")}</h3>
+          <p>{t("feat3Body")}</p>
+        </div>
+      </section>
+
+      <section className="audience-strip glass-panel">
+        <div className="audience-icon"><Users size={26} /></div>
+        <div>
+          <h4>{t("builtFor")}</h4>
+          <p>{t("audience")}</p>
+        </div>
+      </section>
+
+      <section className="dashboard-grid single-col-mobile">
+        <UserProfile
+          profile={userProfile}
+          onProfileChange={handleProfileChange}
+          onReset={handleResetProfile}
+          language={language}
+        />
+        <div className="glass-panel profile-widget" style={{ display: "flex", flexDirection: "column", gap: "0.85rem" }}>
+          <h3 className="text-gradient" style={{ fontSize: "1.15rem" }}>
+            {language === "hi" ? "जल्दी शुरुआत" : "Quick start"}
+          </h3>
+          <p style={{ fontSize: "0.9rem", color: "var(--text-secondary)", lineHeight: 1.55 }}>
+            {language === "hi"
+              ? "अगर आप अभी बोलना नहीं चाहते, तो दाईं तरफ़ अपनी जानकारी टाइप कर सकते हैं — योजनाएं उसी आधार पर मिल जाएंगी।"
+              : "Not ready to speak? Type your details on the side and we'll match schemes the same way."}
+          </p>
+          <button className="btn btn-primary" onClick={() => setCurrentPage("guide")}>
+            <BookOpen size={16} /> {t("navGuide")}
+          </button>
+        </div>
+      </section>
+    </div>
+  );
+
+  const GuidePage = (
+    <div className="page-transition-wrapper">
+      <div className="page-head">
+        <button className="btn back-btn" onClick={() => setCurrentPage("home")}>
+          <ArrowLeft size={16} /> {t("backBtn")}
+        </button>
+        <h2 className="page-title">{t("guideTitle")}</h2>
+        <div style={{ width: "120px" }} />
+      </div>
+
+      <p className="page-lead">{t("guideIntro")}</p>
+
+      <div className="steps-grid">
+        {[
+          { n: "step1", icon: <Mic size={22} /> },
+          { n: "step2", icon: <MessageCircle size={22} /> },
+          { n: "step3", icon: <Award size={22} /> },
+        ].map((s) => (
+          <div key={s.n} className="step-card glass-panel">
+            <div className="step-icon">{s.icon}</div>
+            <h3>{t(`${s.n}Title`)}</h3>
+            <p>{t(`${s.n}Body`)}</p>
+          </div>
+        ))}
+      </div>
+
+      <div className="glass-panel tips-panel">
+        <h3><Sparkles size={18} /> {t("tipsTitle")}</h3>
+        <ul>
+          <li>{t("tip1")}</li>
+          <li>{t("tip2")}</li>
+          <li>{t("tip3")}</li>
+        </ul>
+      </div>
+    </div>
+  );
+
+  const AboutPage = (
+    <div className="page-transition-wrapper">
+      <div className="page-head">
+        <button className="btn back-btn" onClick={() => setCurrentPage("home")}>
+          <ArrowLeft size={16} /> {t("backBtn")}
+        </button>
+        <h2 className="page-title">{t("aboutTitle")}</h2>
+        <div style={{ width: "120px" }} />
+      </div>
+
+      <div className="glass-panel about-lead">
+        <Heart size={26} style={{ color: "var(--accent-secondary)" }} />
+        <p>{t("aboutLead")}</p>
+      </div>
+
+      <div className="dashboard-grid single-col-mobile">
+        <div className="glass-panel about-card">
+          <h3>{t("missionTitle")}</h3>
+          <p>{t("missionBody")}</p>
+        </div>
+        <div className="glass-panel about-card">
+          <h3>{t("valuesTitle")}</h3>
+          <ul className="values-list">
+            <li><ShieldCheck size={18} /> <div><strong>{t("val1")}</strong><span>{t("val1Body")}</span></div></li>
+            <li><CheckCircle2 size={18} /> <div><strong>{t("val2")}</strong><span>{t("val2Body")}</span></div></li>
+            <li><Info size={18} /> <div><strong>{t("val3")}</strong><span>{t("val3Body")}</span></div></li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  );
+
+  const ResultsPage = (
+    <div className="page-transition-wrapper results-page-layout">
+      <div className="page-head">
+        <button className="btn back-btn" onClick={() => setCurrentPage("home")}>
+          <ArrowLeft size={16} /> {t("backBtn")}
+        </button>
+        <h2 className="page-title">{t("reportTitle")}</h2>
+        <div style={{ width: "120px" }} />
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "1rem", marginBottom: "1.5rem" }}>
+        <div className="glass-panel stat-card" style={{ borderTop: "3px solid var(--color-success)" }}>
+          <div className="stat-head"><CheckCircle2 size={20} style={{ color: "var(--color-success)" }} /><span>{t("eligibleCount")}</span></div>
+          <span className="stat-num" style={{ color: "var(--color-success)" }}>{stats.eligible}</span>
+        </div>
+        <div className="glass-panel stat-card" style={{ borderTop: "3px solid var(--color-warning)" }}>
+          <div className="stat-head"><AlertTriangle size={20} style={{ color: "var(--color-warning)" }} /><span>{t("nearMatchCount")}</span></div>
+          <span className="stat-num" style={{ color: "var(--color-warning)" }}>{stats.nearMatch}</span>
+        </div>
+        <div className="glass-panel stat-card" style={{ borderTop: "3px solid var(--accent-primary)" }}>
+          <div className="stat-head"><Gauge size={20} style={{ color: "var(--accent-primary)" }} /><span>{t("avgReadiness")}</span></div>
+          <div className="readiness-stat-value">
+            <span className="stat-num" style={{ color: "var(--accent-primary)" }}>{stats.avgReadiness}</span>
+            <span className="unit">/100</span>
+          </div>
+        </div>
+      </div>
+
+      <div className="dashboard-grid results-page-grid">
+        <div className="right-column-container">
+          <div style={{ marginBottom: "1.5rem" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "1rem", marginBottom: "1rem" }}>
+              <h3 style={{ display: "flex", alignItems: "center", gap: "0.5rem", fontSize: "1.25rem", fontWeight: "700", margin: 0 }}>
+                <Award size={22} style={{ color: "var(--accent-primary)" }} />
+                <span>{language === "hi" ? "पात्र योजनाएं" : "Your Schemes"}</span>
+              </h3>
+              <span className="schemes-count-pill">
+                {filteredSchemes.length} {language === "hi" ? "योजनाएं" : "schemes"}
+              </span>
+            </div>
+            <div className="schemes-tabs">
+              <button className={`tab-btn ${activeTab === "all" ? "active" : ""}`} onClick={() => setActiveTab("all")}>
+                {language === "hi" ? "सभी" : language === "ta" ? "அனைத்தும்" : language === "te" ? "అన్నీ" : "All"}
+              </button>
+              <button className={`tab-btn ${activeTab === "eligible" ? "active" : ""}`} onClick={() => setActiveTab("eligible")}>
+                {language === "hi" ? "पात्र" : language === "ta" ? "தகுதியானவை" : language === "te" ? "అర్హులు" : "Eligible"}
+              </button>
+              <button className={`tab-btn ${activeTab === "near_match" ? "active" : ""}`} onClick={() => setActiveTab("near_match")}>
+                {language === "hi" ? "निकटतम" : language === "ta" ? "கிட்டத்தட்ட" : language === "te" ? "దాదాపు" : "Near"}
+              </button>
+            </div>
+          </div>
+
+          <div className="schemes-list">
+            {filteredSchemes.length > 0 ? (
+              filteredSchemes.map((match) => (
+                (match.status !== "ineligible" || activeTab === "all") && (
+                  <SchemeCard
+                    key={match.scheme.scheme_id}
+                    matchResult={match}
+                    language={language}
+                    userProfile={userProfile}
+                  />
+                )
+              ))
+            ) : (
+              <div className="glass-panel empty-schemes">
+                <ClipboardList className="empty-icon" />
+                <div>
+                  <p style={{ fontWeight: 600, fontSize: "1.1rem" }}>{t("noMatches")}</p>
+                </div>
+              </div>
+            )}
           </div>
         </div>
 
+        <div className="left-column-container" style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
+          <ConsolidatedDocs matchedResults={matchedSchemesList} userProfile={userProfile} language={language} />
+          <div className="glass-panel" style={{ padding: "1.5rem" }}>
+            <h4 style={{ fontSize: "0.95rem", fontWeight: 700, marginBottom: "1rem", display: "flex", alignItems: "center", gap: "0.5rem" }}>
+              <span style={{ width: 8, height: 8, borderRadius: "50%", background: "var(--accent-primary)", boxShadow: "0 0 8px rgba(79,70,229,0.4)" }} />
+              <span>{language === "hi" ? "आपकी प्रोफ़ाइल" : "Your Profile"}</span>
+            </h4>
+            <UserProfile profile={userProfile} onProfileChange={handleProfileChange} onReset={handleResetProfile} language={language} />
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+
+  const navItems = [
+    { key: "home", icon: <HomeIcon size={15} />, label: t("navHome") },
+    { key: "guide", icon: <BookOpen size={15} />, label: t("navGuide") },
+    { key: "about", icon: <Info size={15} />, label: t("navAbout") },
+    ...(stats.total > 0 ? [{ key: "results", icon: <Award size={15} />, label: t("navResults") }] : []),
+  ];
+
+  const currentLang = LANGS.find(l => l.code === language) || LANGS[0];
+
+  return (
+    <div className="app-container">
+      {/* ============ NAVBAR ============ */}
+      <header className="glass-panel app-header navbar">
+        <div className="brand" onClick={() => setCurrentPage("home")} style={{ cursor: "pointer" }}>
+          <div>
+            <h1 className="brand-text">Awaaz</h1>
+            <span className="brand-tagline">{t("tagline")}</span>
+          </div>
+        </div>
+
+        <nav className="nav-links">
+          {navItems.map(n => (
+            <button
+              key={n.key}
+              className={`nav-link ${currentPage === n.key ? "active" : ""}`}
+              onClick={() => setCurrentPage(n.key)}
+            >
+              {n.icon}<span>{n.label}</span>
+            </button>
+          ))}
+        </nav>
+
         <div className="header-controls">
-          {/* 4-Language Switcher */}
-          <div className="lang-selector">
-            <button className={`lang-btn ${language === "hi" ? "active" : ""}`} onClick={() => setLanguage("hi")}>हिन्दी</button>
-            <button className={`lang-btn ${language === "en" ? "active" : ""}`} onClick={() => setLanguage("en")}>English</button>
-            <button className={`lang-btn ${language === "ta" ? "active" : ""}`} onClick={() => setLanguage("ta")}>தமிழ்</button>
-            <button className={`lang-btn ${language === "te" ? "active" : ""}`} onClick={() => setLanguage("te")}>తెలుగు</button>
+          {/* Language dropdown */}
+          <div className="lang-dropdown" ref={langRef}>
+            <button className="lang-dd-btn" onClick={() => setLangOpen(o => !o)}>
+              <span className="lang-flag">🌐</span>
+              <span>{currentLang.label}</span>
+              <ChevronDown size={14} className={`chev ${langOpen ? "open" : ""}`} />
+            </button>
+            {langOpen && (
+              <div className="lang-dd-menu glass-panel">
+                {LANGS.map(l => (
+                  <button
+                    key={l.code}
+                    className={`lang-dd-item ${l.code === language ? "active" : ""}`}
+                    onClick={() => { setLanguage(l.code); setLangOpen(false); }}
+                  >
+                    <span>{l.label}</span>
+                    <span className="lang-en">{l.english}</span>
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       </header>
 
-      {/* ==================== PAGE 1: HOME VIEW ==================== */}
-      {currentPage === "home" && (
-        <div className="page-transition-wrapper">
-          
-          {/* Quick Notification Banner if schemes are matched */}
-          {stats.total > 0 && (
-            <div 
-              className="glass-panel results-banner-alert" 
-              onClick={() => setCurrentPage("results")}
-              style={{
-                cursor: "pointer",
-                padding: "1.25rem",
-                marginBottom: "1rem",
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center",
-                background: "rgba(79, 70, 229, 0.05)",
-                borderColor: "rgba(79, 70, 229, 0.25)"
-              }}
-            >
-              <div style={{ display: "flex", gap: "0.75rem", alignItems: "center" }}>
-                <div style={{ background: "var(--accent-primary)", padding: "0.5rem", borderRadius: "50%", color: "#fff" }}>
-                  <Award size={20} />
-                </div>
-                <div style={{ textAlign: "left" }}>
-                  <h4 style={{ fontSize: "1rem", fontWeight: "700" }}>{getTxt("resultsBannerTitle")}</h4>
-                  <p style={{ fontSize: "0.8rem", color: "var(--text-secondary)", marginTop: "0.15rem" }}>
-                    {getTxt("resultsBannerDesc")}
-                  </p>
-                </div>
-              </div>
-              <button className="btn btn-primary" style={{ padding: "0.45rem 1rem", fontSize: "0.8rem" }}>
-                {getTxt("viewResults")}
-              </button>
-            </div>
-          )}
+      {currentPage === "home" && HomePage}
+      {currentPage === "guide" && GuidePage}
+      {currentPage === "about" && AboutPage}
+      {currentPage === "results" && ResultsPage}
 
-          <div className="dashboard-grid single-col-mobile">
-            {/* Left side: Guide instructions card */}
-            <div className="glass-panel profile-widget" style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
-              <div className="profile-header">
-                <h3 className="text-gradient" style={{ fontSize: "1.25rem" }}>
-                  {language === "hi" ? "आवाज़ का उपयोग कैसे करें" : 
-                   language === "ta" ? "குரல் அசிஸ்டண்டை எவ்வாறு பயன்படுத்துவது" :
-                   language === "te" ? "వాయిస్ అసిస్టెంట్ ఎలా ఉపయోగించాలి" :
-                   "How to use Awaaz Assistant"}
-                </h3>
-              </div>
-              
-              <ul style={{ paddingLeft: "1.25rem", display: "flex", flexDirection: "column", gap: "0.75rem", fontSize: "0.875rem", color: "var(--text-secondary)", lineHeight: "1.5" }}>
-                <li>
-                  {language === "hi" ? "नीचे दिए गए नीले रिकॉर्डिंग कैप्सूल पर टैप करें।" : 
-                   language === "ta" ? "கீழே உள்ள நீல நிற ரெக்கார்டிங் பட்டனை கிளிக் செய்யவும்." :
-                   language === "te" ? "క్రింద ఉన్న నీలి రంగు రికార్డింగ్ బటన్‌ను క్లిక్ చేయండి." :
-                   "Tap the blue recording capsule sticky at the bottom."}
-                </li>
-                <li>
-                  {language === "hi" ? "अपनी उम्र, काम, मासिक आय और ज़मीन के बारे में बताएं। (जैसे: 'मैं दर्जी हूँ, 35 साल की उम्र है, ज़मीन नहीं है')" : 
-                   language === "ta" ? "உங்கள் வயது, வேலை, வருமானம் மற்றும் நிலம் பற்றி கூறவும். (எ.கா. 'நான் தையல்காரர், வயது 35, சொந்த நிலம் இல்லை')" :
-                   language === "te" ? "మీ వయస్సు, పని, ఆదాయం మరియు భూమి గురించి చెప్పండి. (ఉదా: 'నాకు సొంత భూమి లేదు, దర్జీ పని చేస్తాను, వయస్సు 35')" :
-                   "Describe your age, job, income, or land. (e.g. 'I am a 35 year old tailor with no land')"}
-                </li>
-                <li>
-                  {language === "hi" ? "असिस्टेंट आपकी जानकारी को समझेगा और आपको सीधे परिणाम पेज पर ले जाएगा!" : 
-                   language === "ta" ? "அசிஸ்டண்ட் உங்கள் குரலை புரிந்து கொண்டு தானாகவே திட்டங்கள் பக்கத்திற்கு அழைத்துச் செல்லும்!" :
-                   language === "te" ? "వాయిస్ అసిస్టెంట్ మీ మాటలను విశ్లేషించి నేరుగా పథకాల నివేదిక పేజీకి తీసుకువెళుతుంది!" :
-                   "The AI will parse your profile parameters and automatically redirect you to the Results Page!"}
-                </li>
-              </ul>
-
-              {stats.total > 0 && (
-                <button 
-                  className="btn btn-primary" 
-                  onClick={() => setCurrentPage("results")} 
-                  style={{ width: "100%", marginTop: "1rem", padding: "0.75rem" }}
-                >
-                  {getTxt("viewResults")} ({stats.total})
-                </button>
-              )}
-            </div>
-
-            {/* Right side: Profile Inspector Customizer */}
-            <UserProfile 
-              profile={userProfile}
-              onProfileChange={handleProfileChange}
-              onReset={handleResetProfile}
-              language={language}
-            />
-          </div>
-        </div>
-      )}
-
-      {/* ==================== PAGE 2: FULL RESULTS REPORT VIEW ==================== */}
-      {currentPage === "results" && (
-        <div className="page-transition-wrapper results-page-layout">
-          
-          {/* Header Action Row */}
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "1rem", marginBottom: "1rem" }}>
-            <button className="btn back-btn" onClick={() => setCurrentPage("home")} style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-              <ArrowLeft size={16} />
-              <span>{getTxt("backBtn")}</span>
-            </button>
-            <h2 style={{ fontSize: "1.6rem", fontWeight: "700", background: "linear-gradient(to right, var(--accent-primary), var(--accent-secondary))", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", margin: "0" }}>
-              {getTxt("reportTitle")}
-            </h2>
-            <div style={{ width: "120px" }}></div>
-          </div>
-
-          {/* Quick Stats Cards Widget */}
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "1rem", marginBottom: "1.5rem" }}>
-            <div className="glass-panel" style={{ padding: "1.25rem", borderTop: "3px solid var(--color-success)", display: "flex", flexDirection: "column", gap: "0.5rem" }}>
-              <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-                <CheckCircle2 size={20} style={{ color: "var(--color-success)" }} />
-                <span style={{ fontSize: "0.8rem", fontWeight: "700", textTransform: "uppercase", color: "var(--text-muted)", letterSpacing: "0.05em" }}>
-                  {getTxt("eligibleCount")}
-                </span>
-              </div>
-              <span style={{ fontSize: "2rem", fontWeight: "800", color: "var(--color-success)" }}>
-                {stats.eligible}
-              </span>
-            </div>
-            <div className="glass-panel" style={{ padding: "1.25rem", borderTop: "3px solid var(--color-warning)", display: "flex", flexDirection: "column", gap: "0.5rem" }}>
-              <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-                <AlertTriangle size={20} style={{ color: "var(--color-warning)" }} />
-                <span style={{ fontSize: "0.8rem", fontWeight: "700", textTransform: "uppercase", color: "var(--text-muted)", letterSpacing: "0.05em" }}>
-                  {getTxt("nearMatchCount")}
-                </span>
-              </div>
-              <span style={{ fontSize: "2rem", fontWeight: "800", color: "var(--color-warning)" }}>
-                {stats.nearMatch}
-              </span>
-            </div>
-            <div className="glass-panel" style={{ padding: "1.25rem", borderTop: "3px solid var(--accent-primary)", display: "flex", flexDirection: "column", gap: "0.5rem" }}>
-              <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-                <Gauge size={20} style={{ color: "var(--accent-primary)" }} />
-                <span style={{ fontSize: "0.8rem", fontWeight: "700", textTransform: "uppercase", color: "var(--text-muted)", letterSpacing: "0.05em" }}>
-                  {getTxt("avgReadiness")}
-                </span>
-              </div>
-              <div className="readiness-stat-value">
-                <span style={{ fontSize: "2rem", fontWeight: "800", color: "var(--accent-primary)" }}>
-                  {stats.avgReadiness}
-                </span>
-                <span className="unit">/100</span>
-              </div>
-            </div>
-          </div>
-
-          {/* Core Content Grid: Schemes list vs Documents aggregate side by side */}
-          <div className="dashboard-grid results-page-grid">
-            
-            {/* Left Column: Matches list */}
-            <div className="right-column-container">
-              <div style={{ marginBottom: "1.5rem" }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "1rem", marginBottom: "1rem" }}>
-                  <h3 style={{ display: "flex", alignItems: "center", gap: "0.5rem", fontSize: "1.25rem", fontWeight: "700", margin: "0" }}>
-                    <Award size={22} style={{ color: "var(--accent-primary)" }} />
-                    <span>{language === "hi" ? "पात्र योजनाएं" : "Your Schemes"}</span>
-                  </h3>
-                  <span style={{ 
-                    fontSize: "0.8rem", 
-                    background: "rgba(79, 70, 229, 0.08)", 
-                    color: "var(--accent-primary)", 
-                    padding: "0.3rem 0.75rem", 
-                    borderRadius: "50px",
-                    fontWeight: "700"
-                  }}>
-                    {filteredSchemes.length} {language === "hi" ? "योजनाएं" : "schemes"}
-                  </span>
-                </div>
-                
-                {/* Tabs */}
-                <div className="schemes-tabs">
-                  <button className={`tab-btn ${activeTab === "all" ? "active" : ""}`} onClick={() => setActiveTab("all")}>
-                    {language === "hi" ? "सभी" : language === "ta" ? "அனைத்தும்" : language === "te" ? "అన్నీ" : "All"}
-                  </button>
-                  <button className={`tab-btn ${activeTab === "eligible" ? "active" : ""}`} onClick={() => setActiveTab("eligible")}>
-                    {language === "hi" ? "पात्र" : language === "ta" ? "தகுதியானவை" : language === "te" ? "అర్హులు" : "Eligible"}
-                  </button>
-                  <button className={`tab-btn ${activeTab === "near_match" ? "active" : ""}`} onClick={() => setActiveTab("near_match")}>
-                    {language === "hi" ? "निकटतम" : language === "ta" ? "கிட்டத்தட்ட" : language === "te" ? "దాదాపు" : "Near"}
-                  </button>
-                </div>
-              </div>
-
-              <div className="schemes-list">
-                {filteredSchemes.length > 0 ? (
-                  filteredSchemes.map((match) => (
-                    (match.status !== "ineligible" || activeTab === "all") && (
-                      <SchemeCard 
-                        key={match.scheme.scheme_id} 
-                        matchResult={match}
-                        language={language}
-                        userProfile={userProfile}
-                      />
-                    )
-                  ))
-                ) : (
-                  <div className="glass-panel empty-schemes">
-                    <ClipboardList className="empty-icon" />
-                    <div>
-                      <p style={{ fontWeight: "600", fontSize: "1.1rem" }}>{getTxt("noMatches")}</p>
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* Right Column: Aggregated Documents Toolkit */}
-            <div className="left-column-container" style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
-              <ConsolidatedDocs 
-                matchedResults={matchedSchemesList}
-                userProfile={userProfile}
-                language={language}
-              />
-              
-              {/* Profile Editor */}
-              <div className="glass-panel" style={{ padding: "1.5rem" }}>
-                <h4 style={{ fontSize: "0.95rem", fontWeight: "700", marginBottom: "1rem", display: "flex", alignItems: "center", gap: "0.5rem", margin: "0 0 1rem 0" }}>
-                  <span style={{ 
-                    width: "8px", 
-                    height: "8px", 
-                    borderRadius: "50%", 
-                    background: "var(--accent-primary)", 
-                    boxShadow: "0 0 8px rgba(79, 70, 229, 0.4)"
-                  }}></span>
-                  <span>{language === "hi" ? "आपकी प्रोफ़ाइल" : "Your Profile"}</span>
-                </h4>
-                <UserProfile 
-                  profile={userProfile}
-                  onProfileChange={handleProfileChange}
-                  onReset={handleResetProfile}
-                  language={language}
-                />
-              </div>
-            </div>
-
-          </div>
-        </div>
-      )}
-
-      {/* Floating Bottom Drawer Voice Assistant capsule */}
-      <VoiceAssistant 
+      <VoiceAssistant
         onTranscriptReceived={handleTranscriptReceived}
         aiResponse={aiResponse}
         language={language}
