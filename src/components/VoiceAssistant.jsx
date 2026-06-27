@@ -25,6 +25,7 @@ export default function VoiceAssistant({
   const [speechSupported, setSpeechSupported] = useState(true);
   const [isOpen, setIsOpen] = useState(false);
   const [micError, setMicError] = useState("");
+  const [isSpeaking, setIsSpeaking] = useState(false);
 
   // Wrap-up animation state — runs after the user finishes speaking
   // (or submits text), before the dashboard opens.
@@ -32,6 +33,7 @@ export default function VoiceAssistant({
   const [wrapUpProgress, setWrapUpProgress] = useState(0);
 
   const recognitionRef = useRef(null);
+  const synthesisUtteranceRef = useRef(null);
   const onTranscriptRef = useRef(onTranscriptReceived);
   const onReadyRef = useRef(onReadyToShowResults);
   const languageRef = useRef(language);
@@ -50,6 +52,16 @@ export default function VoiceAssistant({
     }
   }, [language]);
 
+  // Sync vocal readouts with AI responses
+  useEffect(() => {
+    if (aiResponse) {
+      speakText(aiResponse);
+    }
+    return () => {
+      cancelSpeaking();
+    };
+  }, [aiResponse]);
+
   function localeFor(lang) {
     if (lang === "hi") return "hi-IN";
     if (lang === "ta") return "ta-IN";
@@ -66,7 +78,7 @@ export default function VoiceAssistant({
     }
 
     const rec = new SR();
-    rec.continuous = true;
+    rec.continuous = false;
     rec.interimResults = true;
     rec.maxAlternatives = 1;
     rec.lang = localeFor(languageRef.current);
@@ -200,15 +212,41 @@ export default function VoiceAssistant({
   // Cleanup on unmount
   useEffect(() => () => clearWrapUpTimers(), []);
 
-  // ---- Speech synthesis (kept for the "Repeat" button on the home page) ---
+  // ---- Speech synthesis (reading aloud generated summaries) ----------------
   const cancelSpeaking = () => {
     if (window.speechSynthesis) {
       try { window.speechSynthesis.cancel(); } catch { /* noop */ }
     }
+    setIsSpeaking(false);
   };
 
-  // Note: we intentionally DO NOT auto-speak aiResponse and DO NOT show it
-  // inside the assistant sheet — the dashboard is the destination.
+  const speakText = (text) => {
+    cancelSpeaking();
+    if (!window.speechSynthesis) return;
+
+    const cleanText = text.replace(/[*#_`\-]/g, "");
+    const utterance = new SpeechSynthesisUtterance(cleanText);
+    
+    // Set synthesis language locale
+    if (language === "hi") utterance.lang = "hi-IN";
+    else if (language === "ta") utterance.lang = "ta-IN";
+    else if (language === "te") utterance.lang = "te-IN";
+    else utterance.lang = "en-IN";
+    
+    const voices = window.speechSynthesis.getVoices();
+    const targetLang = language;
+    const voice = voices.find(v => v.lang.startsWith(targetLang));
+    if (voice) {
+      utterance.voice = voice;
+    }
+
+    utterance.onstart = () => setIsSpeaking(true);
+    utterance.onend = () => setIsSpeaking(false);
+    utterance.onerror = () => setIsSpeaking(false);
+
+    synthesisUtteranceRef.current = utterance;
+    window.speechSynthesis.speak(utterance);
+  };
 
   // ---- UI handlers ---------------------------------------------------------
   const toggleListening = (e) => {
@@ -255,6 +293,9 @@ export default function VoiceAssistant({
     if (!value) return;
     setTextInput("");
     handleSubmitTranscript(value);
+    if (isListening && recognitionRef.current) {
+      try { recognitionRef.current.abort(); } catch { /* noop */ }
+    }
   };
 
   const handleClose = (e) => {
@@ -264,6 +305,9 @@ export default function VoiceAssistant({
     setWrapUpActive(false);
     setWrapUpProgress(0);
     setIsOpen(false);
+    if (isListening && recognitionRef.current) {
+      try { recognitionRef.current.abort(); } catch { /* noop */ }
+    }
   };
 
   // ---- i18n ----------------------------------------------------------------
@@ -304,6 +348,15 @@ export default function VoiceAssistant({
       ta: "குரல் மூலம் பேசவும் அல்லது தட்டச்சு செய்யவும்...",
       te: "మైక్రోఫోన్ ఉపయోగించండి లేదా ఇక్కడ టైప్ చేయండి...",
     },
+    noSpeechSupport: {
+      hi: "इस ब्राउज़र में आवाज़ पहचान समर्थित नहीं है। कृपया नीचे टाइप करें।",
+      en: "Speech recognition is not supported on this browser. Please type below.",
+      ta: "இந்த உலாவியில் குரல் அறிதல் ஆதரிக்கப்படவில்லை. தயவுசெய்து கீழே தட்டச்சு செய்யவும்.",
+      te: "ఈ బ్రౌజర్‌లో వాయిస్ రికగ్నిషన్ సపోర్ట్ చేయదు. దయచేసి క్రింద టైప్ చేయండి."
+    },
+    mute: { hi: "म्यूट करें", en: "Mute audio", ta: "ஒலியை நிறுத்து", te: "మ్యూట్ చేయి" },
+    repeat: { hi: "फिर से सुनाएं", en: "Repeat Voice", ta: "மீண்டும் கேள்", te: "మరోసారి వినిపించు" },
+    aiAdvice: { hi: "असिस्टेंट का सुझाव", en: "Voice Advice Summary", ta: "அசிஸ்டண்ட் பரிந்துரை", te: "అసిస్టెంట్ సలహా" },
     inputPlaceholder: {
       hi: "यहाँ टाइप करके भी पूछ सकते हैं...",
       en: "Or type your message...",
@@ -378,7 +431,7 @@ export default function VoiceAssistant({
               {/* Glowing Orb */}
               <div className="orb-container">
                 <div
-                  className={`orb ${isListening ? "recording" : ""} ${wrapUpActive ? "speaking" : ""}`}
+                  className={`orb ${isListening ? "recording" : ""} ${(isSpeaking || wrapUpActive) ? "speaking" : ""}`}
                   onClick={toggleListening}
                 >
                   <div className="mic-icon-container">
@@ -410,6 +463,27 @@ export default function VoiceAssistant({
                 >
                   {statusText()}
                 </span>
+                
+                <div style={{ marginLeft: "auto", display: "flex", gap: "0.5rem" }}>
+                  {isSpeaking && (
+                    <button 
+                      className="btn btn-danger" 
+                      style={{ padding: "0.35rem 0.75rem", fontSize: "0.8rem" }} 
+                      onClick={cancelSpeaking}
+                    >
+                      <VolumeX size={14} /> {t("mute")}
+                    </button>
+                  )}
+                  {!isSpeaking && aiResponse && (
+                    <button 
+                      className="btn" 
+                      style={{ padding: "0.35rem 0.75rem", fontSize: "0.8rem" }} 
+                      onClick={() => speakText(aiResponse)}
+                    >
+                      <Volume2 size={14} /> {t("repeat")}
+                    </button>
+                  )}
+                </div>
               </div>
 
               {/* Mic error banner */}
@@ -429,7 +503,9 @@ export default function VoiceAssistant({
                   {transcript ? (
                     transcript
                   ) : (
-                    <span className="transcript-placeholder">{t("placeholderText")}</span>
+                    <span className="transcript-placeholder">
+                      {speechSupported ? t("placeholderText") : t("noSpeechSupport")}
+                    </span>
                   )}
                 </div>
               </div>
@@ -474,6 +550,17 @@ export default function VoiceAssistant({
                       }}
                     />
                   </div>
+                </div>
+              )}
+
+              {/* AI Vernacular Advice Speech Block */}
+              {aiResponse && (
+                <div className="ai-response-box" style={{ marginTop: "0.75rem" }}>
+                  <div className="ai-response-title text-gradient">
+                    <Volume2 size={14} />
+                    <span>{t("aiAdvice")}</span>
+                  </div>
+                  <div className="ai-response-text">{aiResponse}</div>
                 </div>
               )}
             </div>
