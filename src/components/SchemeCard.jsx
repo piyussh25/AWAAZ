@@ -176,19 +176,19 @@ export default function SchemeCard({ matchResult, language, userProfile }) {
         <div className="docs-grid">
           {scheme.documents_needed.map((doc, idx) => {
             const isOwned = isDocumentPossessed(doc);
-            let indicator = "";
+            let indicator = null;
             let style = { background: "rgba(255, 255, 255, 0.03)", color: "var(--text-secondary)" };
 
             if (isOwned === true) {
-              indicator = "✓ ";
+              indicator = <CheckCircle2 size={13} style={{ flexShrink: 0 }} />;
               style = { background: "var(--color-success-bg)", borderColor: "rgba(16, 185, 129, 0.2)", color: "var(--color-success)" };
             } else if (isOwned === false) {
-              indicator = "✗ ";
+              indicator = <XCircle size={13} style={{ flexShrink: 0 }} />;
               style = { background: "var(--color-danger-bg)", borderColor: "rgba(239, 68, 68, 0.2)", color: "var(--color-danger)" };
             }
 
             return (
-              <div key={idx} className="doc-tag" style={style}>
+              <div key={idx} className="doc-tag" style={{ ...style, display: "inline-flex", alignItems: "center", gap: "0.3rem" }}>
                 {indicator}{doc}
               </div>
             );

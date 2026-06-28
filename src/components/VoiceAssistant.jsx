@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
-import { Mic, MicOff, Volume2, VolumeX, Send, Loader2, X, ChevronUp, CheckCircle2 } from "lucide-react";
+import { Mic, MicOff, Volume2, VolumeX, Send, Loader2, X, ChevronUp, CheckCircle2, AlertTriangle } from "lucide-react";
 
 /**
  * VoiceAssistant
@@ -310,6 +310,25 @@ export default function VoiceAssistant({
     }
   };
 
+  // Clear any previous conversation so reopening the assistant starts fresh.
+  const resetSession = () => {
+    cancelSpeaking();
+    clearWrapUpTimers();
+    setTranscript("");
+    setTextInput("");
+    setMicError("");
+    setWrapUpActive(false);
+    setWrapUpProgress(0);
+    accumulatedFinalRef.current = "";
+    hasFiredReadyRef.current = false;
+  };
+
+  // Open the assistant drawer with a clean slate.
+  const openFresh = () => {
+    resetSession();
+    setIsOpen(true);
+  };
+
   // ---- i18n ----------------------------------------------------------------
   const i18n = {
     title: {
@@ -387,7 +406,7 @@ export default function VoiceAssistant({
       <div
         className={`floating-assistant-trigger ${isListening ? "active-listening" : ""} ${wrapUpActive ? "active-speaking" : ""}`}
         onClick={(e) => {
-          if (!isOpen) setIsOpen(true);
+          if (!isOpen) openFresh();
           // Tapping the capsule should start listening right away, not just
           // open the drawer and leave the user wondering why nothing happens.
           if (!isListening && !isProcessing && !wrapUpActive) {
@@ -490,9 +509,9 @@ export default function VoiceAssistant({
               {micError && (
                 <div
                   className="missing-warning"
-                  style={{ marginTop: "0.5rem", color: "var(--color-danger)" }}
+                  style={{ marginTop: "0.5rem", color: "var(--color-danger)", display: "inline-flex", alignItems: "center", gap: "0.4rem" }}
                 >
-                  <strong>⚠ </strong>{micError}
+                  <AlertTriangle size={14} style={{ flexShrink: 0 }} />{micError}
                 </div>
               )}
 

@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import {
   Award, ClipboardList, ArrowLeft, CheckCircle2, AlertTriangle,
-  Gauge, ChevronDown, Mic, Sparkles, Users, Heart,
+  Gauge, ChevronDown, Mic, Globe, Star, Users, Heart,
   Home as HomeIcon, BookOpen, Info, FileText, ShieldCheck, MessageCircle
 } from "lucide-react";
 import { schemes } from "./data/schemes";
@@ -170,25 +170,21 @@ export default function App() {
         <div className="hero-blob blob1" />
         <div className="hero-blob blob2" />
         <div className="hero-inner">
-          <span className="hero-kicker">
-            <Sparkles size={14} /> {t("heroKicker")}
-          </span>
           <h1 className="hero-title">{t("heroTitle")}</h1>
           <p className="hero-sub">{t("heroSub")}</p>
           <div className="hero-cta-row">
             <button className="btn btn-primary btn-lg" onClick={() => {
               window.scrollTo({ top: document.body.scrollHeight, behavior: "smooth" });
             }}>
-              <Mic size={18} /> {t("heroCta")}
+              {t("heroCta")}
             </button>
             <button className="btn btn-ghost btn-lg" onClick={() => setCurrentPage("guide")}>
-              <BookOpen size={18} /> {t("heroCta2")}
+              {t("heroCta2")}
             </button>
           </div>
 
           {stats.total > 0 && (
             <div className="hero-readout glass-panel" onClick={() => setCurrentPage("results")}>
-              <Award size={18} />
               <span>{stats.eligible} {t("eligibleCount")} • {stats.nearMatch} {t("nearMatchCount")}</span>
               <span className="hero-readout-cta">{t("viewResults")} →</span>
             </div>
@@ -198,35 +194,26 @@ export default function App() {
 
       <section className="feature-grid">
         <div className="feature-card glass-panel">
-          <div className="feature-icon" style={{ background: "rgba(79,70,229,0.12)", color: "var(--accent-primary)" }}>
-            <MessageCircle size={22} />
-          </div>
           <h3>{t("feat1Title")}</h3>
           <p>{t("feat1Body")}</p>
         </div>
         <div className="feature-card glass-panel">
-          <div className="feature-icon" style={{ background: "rgba(5,150,105,0.12)", color: "var(--color-success)" }}>
-            <Gauge size={22} />
-          </div>
           <h3>{t("feat2Title")}</h3>
           <p>{t("feat2Body")}</p>
         </div>
         <div className="feature-card glass-panel">
-          <div className="feature-icon" style={{ background: "rgba(217,119,6,0.12)", color: "var(--color-warning)" }}>
-            <FileText size={22} />
-          </div>
           <h3>{t("feat3Title")}</h3>
           <p>{t("feat3Body")}</p>
         </div>
       </section>
 
       <section className="audience-strip glass-panel">
-        <div className="audience-icon"><Users size={26} /></div>
         <div>
           <h4>{t("builtFor")}</h4>
           <p>{t("audience")}</p>
         </div>
       </section>
+
 
       <section className="dashboard-grid single-col-mobile">
         <UserProfile
@@ -279,7 +266,7 @@ export default function App() {
       </div>
 
       <div className="glass-panel tips-panel">
-        <h3><Sparkles size={18} /> {t("tipsTitle")}</h3>
+        <h3><Star size={18} /> {t("tipsTitle")}</h3>
         <ul>
           <li>{t("tip1")}</li>
           <li>{t("tip2")}</li>
@@ -447,7 +434,7 @@ export default function App() {
           {/* Language dropdown */}
           <div className="lang-dropdown" ref={langRef}>
             <button className="lang-dd-btn" onClick={() => setLangOpen(o => !o)}>
-              <span className="lang-flag">🌐</span>
+              <Globe size={14} className="lang-flag" />
               <span>{currentLang.label}</span>
               <ChevronDown size={14} className={`chev ${langOpen ? "open" : ""}`} />
             </button>

@@ -1780,8 +1780,8 @@ h6 {
   font-size: 0.92rem; color: var(--text-secondary); line-height: 1.55;
 }
 .tips-panel li::before {
-  content: "✦"; color: var(--accent-secondary);
-  position: absolute; left: 0; top: 0;
+  content: ""; display: block; width: 6px; height: 6px; border-radius: 2px; background: var(--accent-secondary);
+  position: absolute; left: 0; top: 0.6rem;
 }
 
 /* ===================== ABOUT ===================== */
