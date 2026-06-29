@@ -1,8 +1,9 @@
-import React from "react";
-import { CheckCircle2, XCircle, AlertTriangle, FileText, ExternalLink } from "lucide-react";
+import React, { useState } from "react";
+import { CheckCircle2, XCircle, AlertTriangle, FileText, ExternalLink, ChevronDown, ChevronUp } from "lucide-react";
 
 export default function SchemeCard({ matchResult, language, userProfile }) {
   const { scheme, status, score, reasons, missing } = matchResult;
+  const [showSteps, setShowSteps] = useState(false);
 
   // Map scheme status tags
   const statusLabels = {
@@ -32,8 +33,7 @@ export default function SchemeCard({ matchResult, language, userProfile }) {
   // Get local summary text based on language
   const summaryText = scheme.language_summary[language] || scheme.language_summary.en;
 
-  // Per-scheme readiness score (0-100), derived from the matching engine's
-  // analysis of the user's spoken description / profile.
+  // Per-scheme readiness score (0-100)
   const readiness = Math.max(0, Math.min(100, Math.round(score ?? 0)));
   const readinessColor =
     readiness >= 90
@@ -50,6 +50,9 @@ export default function SchemeCard({ matchResult, language, userProfile }) {
           ? "సంసిద్ధత స్కోరు"
           : "Readiness Score";
 
+  // Application steps
+  const steps = scheme.apply_steps?.[language] || scheme.apply_steps?.en || [];
+
   return (
     <div className={`glass-panel scheme-card ${status}`}>
 
@@ -64,7 +67,7 @@ export default function SchemeCard({ matchResult, language, userProfile }) {
         </span>
       </div>
 
-      {/* Readiness Score (per scheme) */}
+      {/* Readiness Score */}
       <div
         style={{
           display: "flex",
@@ -122,9 +125,11 @@ export default function SchemeCard({ matchResult, language, userProfile }) {
       </div>
 
       {/* Vernacular Summary Statement */}
-      <p style={{ fontSize: "0.95rem", color: "var(--text-primary)", fontStyle: "italic", lineHeight: "1.4", borderLeft: "2px solid var(--accent-primary)", paddingLeft: "0.75rem" }}>
-        "{summaryText}"
-      </p>
+      {summaryText && (
+        <p style={{ fontSize: "0.95rem", color: "var(--text-primary)", fontStyle: "italic", lineHeight: "1.4", borderLeft: "2px solid var(--accent-primary)", paddingLeft: "0.75rem" }}>
+          "{summaryText}"
+        </p>
+      )}
 
       {/* Scheme Benefits */}
       <div className="scheme-benefits">
@@ -153,7 +158,7 @@ export default function SchemeCard({ matchResult, language, userProfile }) {
         </div>
       </div>
 
-      {/* Near Match Guidance / Warnings */}
+      {/* Near Match Guidance */}
       {status === "near_match" && missing.length > 0 && (
         <div className="missing-warning">
           <span style={{ fontWeight: "700", display: "flex", alignItems: "center", gap: "0.25rem" }}>
@@ -196,14 +201,88 @@ export default function SchemeCard({ matchResult, language, userProfile }) {
         </div>
       </div>
 
+      {/* Collapsible Step-by-Step Application Steps */}
+      {steps.length > 0 && (
+        <div style={{ marginTop: "1rem", borderTop: "1px solid var(--border-glass)", paddingTop: "1rem" }}>
+          <button
+            onClick={() => setShowSteps(!showSteps)}
+            className="btn"
+            style={{
+              width: "100%",
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              fontSize: "0.825rem",
+              padding: "0.45rem 0.75rem",
+              background: "rgba(0,0,0,0.02)",
+              borderRadius: "var(--radius-sm)",
+              border: "1px solid var(--border-glass)",
+              cursor: "pointer",
+              textAlign: "left"
+            }}
+          >
+            <span style={{ fontWeight: 700, display: "flex", alignItems: "center", gap: "0.4rem" }}>
+              <FileText size={14} style={{ color: "var(--accent-primary)" }} />
+              {language === "hi" ? "आवेदन करने की प्रक्रिया (Steps)" : "How to Apply (Step-by-Step)"}
+            </span>
+            {showSteps ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+          </button>
+
+          {showSteps && (
+            <div style={{ marginTop: "0.75rem", display: "flex", flexDirection: "column", gap: "0.75rem", padding: "0.25rem 0.5rem" }}>
+              {steps.map((step, idx) => (
+                <div key={idx} style={{ display: "flex", gap: "0.75rem", position: "relative" }}>
+                  {/* Timeline connecting line */}
+                  {idx < steps.length - 1 && (
+                    <div
+                      style={{
+                        position: "absolute",
+                        left: "9px",
+                        top: "20px",
+                        bottom: "-15px",
+                        width: "2px",
+                        background: "rgba(79, 70, 229, 0.15)"
+                      }}
+                    />
+                  )}
+                  {/* Timeline node */}
+                  <div
+                    style={{
+                      width: "20px",
+                      height: "20px",
+                      borderRadius: "50%",
+                      background: "var(--accent-primary)",
+                      color: "white",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      fontSize: "0.75rem",
+                      fontWeight: "bold",
+                      flexShrink: 0,
+                      boxShadow: "0 0 8px rgba(79,70,229,0.3)"
+                    }}
+                  >
+                    {idx + 1}
+                  </div>
+                  {/* Step description */}
+                  <p style={{ margin: 0, fontSize: "0.85rem", color: "var(--text-secondary)", lineHeight: "1.45" }}>
+                    {step}
+                  </p>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Action Footer */}
-      <div className="scheme-card-footer">
+      <div className="scheme-card-footer" style={{ marginTop: "1rem" }}>
         <a 
           href={scheme.apply_url} 
           target="_blank" 
           rel="noopener noreferrer" 
           className="btn btn-primary"
-          style={{ textDecoration: "none", display: "inline-flex", alignItems: "center", gap: "0.4rem", padding: "0.45rem 1rem", fontSize: "0.85rem" }}
+          style={{ textDecoration: "none", display: "inline-flex", alignItems: "center", gap: "0.4rem", padding: "0.45rem 1rem", fontSize: "0.85rem", width: "100%", justifyContent: "center" }}
         >
           <span>{language === "hi" ? "आधिकारिक पोर्टल पर आवेदन करें" : "Apply Online"}</span>
           <ExternalLink size={14} />

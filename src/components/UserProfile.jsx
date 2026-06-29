@@ -21,6 +21,27 @@ export default function UserProfile({ profile, onProfileChange, onReset, languag
     });
   };
 
+  const statesList = [
+    { value: "", label: language === "hi" ? "अनिर्धारित" : "Not Set" },
+    { value: "uttar_pradesh", label: language === "hi" ? "उत्तर प्रदेश (UP)" : "Uttar Pradesh" },
+    { value: "tamil_nadu", label: language === "hi" ? "तमिलनाडु (TN)" : "Tamil Nadu" },
+    { value: "telangana", label: language === "hi" ? "तेलंगाना (TS)" : "Telangana" },
+    { value: "maharashtra", label: language === "hi" ? "महाराष्ट्र (MH)" : "Maharashtra" },
+    { value: "bihar", label: language === "hi" ? "बिहार (BR)" : "Bihar" },
+    { value: "west_bengal", label: language === "hi" ? "पश्चिम बंगाल (WB)" : "West Bengal" },
+    { value: "karnataka", label: language === "hi" ? "कर्नाटक (KA)" : "Karnataka" },
+    { value: "rajasthan", label: language === "hi" ? "राजस्थान (RJ)" : "Rajasthan" },
+    { value: "gujarat", label: language === "hi" ? "गुजरात (GJ)" : "Gujarat" },
+    { value: "madhya_pradesh", label: language === "hi" ? "मध्य प्रदेश (MP)" : "Madhya Pradesh" },
+    { value: "delhi", label: language === "hi" ? "दिल्ली (DL)" : "Delhi" },
+    { value: "kerala", label: language === "hi" ? "केरल (KL)" : "Kerala" },
+    { value: "andhra_pradesh", label: language === "hi" ? "आंध्र प्रदेश (AP)" : "Andhra Pradesh" },
+    { value: "punjab", label: language === "hi" ? "पंजाब (PB)" : "Punjab" },
+    { value: "haryana", label: language === "hi" ? "हरियाणा (HR)" : "Haryana" },
+    { value: "odisha", label: language === "hi" ? "ओडिशा (OD)" : "Odisha" },
+    { value: "other", label: language === "hi" ? "अन्य राज्य" : "Other State" }
+  ];
+
   const occupationsList = [
     { value: "", label: language === "hi" ? "अनिर्धारित" : "Not Set" },
     { value: "farmer", label: language === "hi" ? "किसान (Farmer)" : "Farmer" },
@@ -99,6 +120,31 @@ export default function UserProfile({ profile, onProfileChange, onReset, languag
             <option value="male" style={{background: "#0f121d"}}>{language === "hi" ? "पुरुष" : "Male"}</option>
             <option value="female" style={{background: "#0f121d"}}>{language === "hi" ? "महिला" : "Female"}</option>
             <option value="other" style={{background: "#0f121d"}}>{language === "hi" ? "अन्य" : "Other"}</option>
+          </select>
+        </div>
+
+        {/* State Pill */}
+        <div className={`profile-pill ${profile.state ? "active" : ""}`} style={{ gridColumn: "span 2" }}>
+          <span className="profile-pill-label">{language === "hi" ? "राज्य (State)" : "State of Residence"}</span>
+          <select
+            value={profile.state ?? ""}
+            onChange={(e) => handleChange("state", e.target.value)}
+            style={{
+              background: "transparent",
+              border: "none",
+              color: "var(--text-primary)",
+              fontWeight: "600",
+              fontSize: "0.85rem",
+              width: "100%",
+              outline: "none",
+              cursor: "pointer"
+            }}
+          >
+            {statesList.map((st) => (
+              <option key={st.value} value={st.value} style={{background: "#0f121d"}}>
+                {st.label}
+              </option>
+            ))}
           </select>
         </div>
 

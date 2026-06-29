@@ -53,6 +53,47 @@ export function matchSchemes(profile, schemesList) {
       continue;
     }
 
+    // 1.5 State check (Hard blocker if different state, soft check if state not set)
+    const SPECIFIC_STATES = [
+      "uttar_pradesh", "tamil_nadu", "telangana", "maharashtra", "bihar", 
+      "west_bengal", "karnataka", "rajasthan", "gujarat", "madhya_pradesh", 
+      "delhi", "kerala", "andhra_pradesh", "punjab", "haryana", "odisha"
+    ];
+    if (el.state) {
+      if (profile.state) {
+        const userState = profile.state.toLowerCase();
+        const schemeState = el.state.toLowerCase();
+        
+        if (schemeState === "other") {
+          if (SPECIFIC_STATES.includes(userState)) {
+            reasons.push("Excluded: This generic scheme is only for other states.");
+            isExcluded = true;
+          } else {
+            reasons.push("State matches (Other State Welfare).");
+          }
+        } else if (schemeState !== userState) {
+          reasons.push(`Excluded: This scheme is specifically for residents of ${schemeState.replace(/_/g, " ")}.`);
+          isExcluded = true;
+        } else {
+          reasons.push(`State requirement matches (${profile.state.replace(/_/g, " ")}).`);
+        }
+      } else {
+        missing.push("Confirm state of residence");
+        score -= 20;
+      }
+    }
+
+    if (isExcluded) {
+      results.push({
+        scheme,
+        status: "ineligible",
+        score: 0,
+        reasons,
+        missing
+      });
+      continue;
+    }
+
     // 2. Gender check
     if (el.gender && el.gender.length > 0) {
       if (profile.gender) {

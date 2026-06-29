@@ -2,15 +2,17 @@ import React, { useState, useMemo, useCallback, useEffect, useRef } from "react"
 import {
   Award, ClipboardList, ArrowLeft, CheckCircle2, AlertTriangle,
   Gauge, ChevronDown, Mic, Globe, Star, Users, Heart,
-  Home as HomeIcon, BookOpen, Info, FileText, ShieldCheck, MessageCircle
+  Home as HomeIcon, BookOpen, Info, FileText, ShieldCheck, MessageCircle,
+  Settings as SettingsIcon, Loader2, ExternalLink
 } from "lucide-react";
 import { schemes } from "./data/schemes";
 import { matchSchemes } from "./utils/matchingEngine";
-import { parseUserProfile, generateVernacularSummary, getEmptyProfile } from "./utils/gemini";
+import { parseUserProfile, generateVernacularSummary, getEmptyProfile, generateDetailedAIReport } from "./utils/gemini";
 import VoiceAssistant from "./components/VoiceAssistant";
 import UserProfile from "./components/UserProfile";
 import SchemeCard from "./components/SchemeCard";
 import ConsolidatedDocs from "./components/ConsolidatedDocs";
+import Settings from "./components/Settings";
 
 const LANGS = [
   { code: "hi", label: "हिन्दी", english: "Hindi" },
@@ -28,10 +30,13 @@ export default function App() {
   const [userProfile, setUserProfile] = useState(getEmptyProfile());
   const [isProcessing, setIsProcessing] = useState(false);
   const [aiResponse, setAiResponse] = useState("");
-  const [activeTab, setActiveTab] = useState("all");
+  const [activeTab, setActiveTab] = useState("ai_report");
   const [currentPage, setCurrentPage] = useState("home"); // home | results | guide | about
   const [langOpen, setLangOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const langRef = useRef(null);
+  const [aiReport, setAiReport] = useState("");
+  const [isGeneratingReport, setIsGeneratingReport] = useState(false);
 
   useEffect(() => {
     const onClick = (e) => {
@@ -84,11 +89,379 @@ export default function App() {
   }, [language, userProfile]);
 
   const handleReadyToShowResults = useCallback(() => setCurrentPage("results"), []);
+
+  const handleCompleteQuestionnaire = useCallback(async (finalProfile) => {
+    setIsProcessing(true);
+    setIsGeneratingReport(true);
+    setAiResponse("");
+    setAiReport("");
+    let matchedResultsList = [];
+    try {
+      matchedResultsList = matchSchemes(finalProfile, schemes);
+    } catch (err) {
+      console.error("Local matching failed:", err);
+    }
+
+    try {
+      const actionableMatches = matchedResultsList.filter((m) => m.status === "eligible" || m.status === "near_match");
+      
+      // 15-second safety timeout wrapper to prevent getting stuck
+      const withTimeout = (promise, ms) => {
+        return new Promise((resolve, reject) => {
+          const timer = setTimeout(() => reject(new Error("API Timeout")), ms);
+          promise.then(
+            res => { clearTimeout(timer); resolve(res); },
+            err => { clearTimeout(timer); reject(err); }
+          );
+        });
+      };
+
+      const [guidanceAudioText, reportMarkdown] = await withTimeout(
+        Promise.all([
+          generateVernacularSummary(actionableMatches, finalProfile, language),
+          generateDetailedAIReport(matchedResultsList, finalProfile, language)
+        ]),
+        15000
+      );
+      
+      setAiResponse(guidanceAudioText);
+      setAiReport(reportMarkdown);
+    } catch (e) {
+      console.error("Error generating final questionnaire summary:", e);
+      // Fallback: Generate the structured JSON locally so the UI cards still render beautifully!
+      const actionableMatches = matchedResultsList.filter((m) => m.status === "eligible" || m.status === "near_match");
+      const fallbackData = {
+        executive_summary: language === "hi" 
+          ? "नेटवर्क कनेक्शन धीमा होने के कारण स्थानीय रूप से तैयार की गई रिपोर्ट। कृपया अपनी योजना पात्रता विवरण नीचे देखें।"
+          : "Report generated locally due to a slow network connection. Please review your scheme eligibility details below.",
+        schemes: actionableMatches.map(s => ({
+          name: s.scheme.name,
+          category: s.scheme.category || (language === "hi" ? "कल्याण" : "Welfare"),
+          status: s.status,
+          readiness_score: s.status === "eligible" ? 100 : 75,
+          ai_quote: s.scheme.language_summary[language] || s.scheme.language_summary.en,
+          benefits: [s.scheme.benefits],
+          eligibility_analysis: s.reasons.join(". "),
+          requirements: s.missing.map(m => language === "hi" ? `पुष्टि करें: ${m}` : `Confirm: ${m}`),
+          documents: s.scheme.documents_needed || [],
+          steps: s.scheme.apply_steps[language] || s.scheme.apply_steps.en || []
+        }))
+      };
+      setAiReport(JSON.stringify(fallbackData));
+      
+      // Also generate local audio response
+      setAiResponse(language === "hi" 
+        ? "नमस्ते, नेटवर्क कनेक्शन धीमा होने के कारण हमने आपकी योजनाओं की सूची स्थानीय रूप से तैयार कर दी है।"
+        : "Hello, we have prepared your matching schemes locally due to a slow network connection.");
+    } finally {
+      setIsProcessing(false);
+      setIsGeneratingReport(false);
+    }
+  }, [language]);
+
   const handleProfileChange = (updatedProfile) => { setUserProfile(updatedProfile); setAiResponse(""); };
   const handleResetProfile = () => {
     setUserProfile(getEmptyProfile());
-    setAiResponse(""); setActiveTab("all"); setCurrentPage("home");
+    setAiReport("");
+    setAiResponse(""); setActiveTab("ai_report"); setCurrentPage("home");
   };
+
+  const handleGenerateReport = async () => {
+    setIsGeneratingReport(true);
+    try {
+      const report = await generateDetailedAIReport(filteredSchemes, userProfile, language);
+      setAiReport(report);
+    } catch (error) {
+      console.error("Failed to generate AI report", error);
+    } finally {
+      setIsGeneratingReport(false);
+    }
+  };
+
+  function parseBoldText(text) {
+    const parts = text.split(/\*\*([^*]+)\*\*/g);
+    return parts.map((part, i) => (i % 2 === 1 ? <strong key={i} style={{ color: "var(--text-primary)", fontWeight: 700 }}>{part}</strong> : part));
+  }
+
+  function renderMarkdown(mdText) {
+    if (!mdText) return null;
+    return mdText.split("\n").map((line, idx) => {
+      let text = line.trim();
+      if (text.startsWith("###")) {
+        return <h4 key={idx} style={{ fontSize: "1.1rem", fontWeight: 700, margin: "1.25rem 0 0.5rem 0", color: "var(--accent-primary)" }}>{text.replace(/^###\s*/, "")}</h4>;
+      }
+      if (text.startsWith("##")) {
+        return <h3 key={idx} style={{ fontSize: "1.25rem", fontWeight: 700, margin: "1.5rem 0 0.6rem 0", color: "var(--accent-primary)" }}>{text.replace(/^##\s*/, "")}</h3>;
+      }
+      if (text.startsWith("#")) {
+        return <h2 key={idx} style={{ fontSize: "1.4rem", fontWeight: 800, margin: "1.75rem 0 0.75rem 0", color: "var(--accent-primary)" }}>{text.replace(/^#\s*/, "")}</h2>;
+      }
+      if (text.startsWith("-") || text.startsWith("*")) {
+        const content = text.replace(/^[\-\*]\s*/, "");
+        return <li key={idx} style={{ marginLeft: "1.5rem", marginBottom: "0.4rem", listStyleType: "disc" }}>{parseBoldText(content)}</li>;
+      }
+      if (/^\d+\./.test(text)) {
+        const content = text.replace(/^\d+\.\s*/, "");
+        return <li key={idx} style={{ marginLeft: "1.5rem", marginBottom: "0.4rem", listStyleType: "decimal" }}>{parseBoldText(content)}</li>;
+      }
+      if (text === "") return <div key={idx} style={{ height: "0.5rem" }} />;
+      return <p key={idx} style={{ margin: "0 0 0.6rem 0", lineHeight: "1.6" }}>{parseBoldText(line)}</p>;
+    });
+  }
+
+  function renderAIReportDashboard(reportText) {
+    if (!reportText) return null;
+
+    const reportLabels = {
+      hi: {
+        title: "कल्याण सलाहकार पात्रता रिपोर्ट",
+        summary: "मुख्य निष्कर्ष",
+        eligible: "पूर्णतः पात्र (Fully Eligible)",
+        nearMatch: "निकटतम पात्र (Near Match)",
+        score: "तैयारी स्कोर",
+        benefits: "योजना के लाभ:",
+        analysis: "पात्रता विश्लेषण:",
+        reqs: "आवेदन करने के लिए आवश्यक योग्यता:",
+        docs: "दस्तावेज़ चेकलिस्ट:",
+        steps: "आवेदन करने की प्रक्रिया (Steps):",
+        applyBtn: "आधिकारिक पोर्टल पर आवेदन करें"
+      },
+      en: {
+        title: "Welfare Advisor Eligibility Report",
+        summary: "Executive Summary",
+        eligible: "Fully Eligible",
+        nearMatch: "Near Match",
+        score: "Readiness Score",
+        benefits: "Scheme Benefits:",
+        analysis: "Eligibility Analysis:",
+        reqs: "Application Requirements:",
+        docs: "Document Checklist:",
+        steps: "Application Steps:",
+        applyBtn: "Apply on Official Portal"
+      },
+      ta: {
+        title: "நல ஆலோசகர் தகுதி அறிக்கை",
+        summary: "நிர்வாக சுருக்கம்",
+        eligible: "முழு தகுதி (Fully Eligible)",
+        nearMatch: "நெருங்கிய தகுதி (Near Match)",
+        score: "தயாரிப்பு மதிப்பெண்",
+        benefits: "திட்டத்தின் நன்மைகள்:",
+        analysis: "தகுதி பகுப்பாய்வு:",
+        reqs: "விண்ணப்பிக்க தேவையான தகுதிகள்:",
+        docs: "ஆவண சரிபார்ப்பு பட்டியல்:",
+        steps: "விண்ணப்பிக்கும் நடைமுறை (Steps):",
+        applyBtn: "அதிகாரப்பூர்வ போர்ட்டலில் விண்ணப்பிக்கவும்"
+      },
+      te: {
+        title: "సంక్షేమ సలహాదారు అర్హత నివేదిక",
+        summary: "ప్రధాన నివేదిక",
+        eligible: "పూర్తి అర్హత (Fully Eligible)",
+        nearMatch: "దాదాపు అర్హత (Near Match)",
+        score: "సన్నద్ధత స్కోరు",
+        benefits: "పథకం ప్రయోజనాలు:",
+        analysis: "అర్హత విశ్లేషణ:",
+        reqs: "దరఖాస్తు చేయడానికి అవసరమైన అర్హతలు:",
+        docs: "పత్రాల తనిఖీ జాబితా:",
+        steps: "దరఖాస్తు విధానం (Steps):",
+        applyBtn: "అధికారిక పోర్టల్‌లో దరఖాస్తు చేసుకోండి"
+      }
+    };
+
+    const labels = reportLabels[language] || reportLabels.en;
+
+    // Clean JSON content
+    let cleanJson = reportText.trim();
+    if (cleanJson.startsWith("```")) {
+      cleanJson = cleanJson.replace(/^```json\s*/i, "").replace(/```$/, "").trim();
+    }
+
+    try {
+      const data = JSON.parse(cleanJson);
+      
+      return (
+        <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }} className="animate-fade-in">
+          {/* Executive Summary Card */}
+          {data.executive_summary && (
+            <div className="glass-panel" style={{ padding: "1.5rem", borderLeft: "4px solid var(--accent-primary)", background: "linear-gradient(135deg, rgba(79, 70, 229, 0.04), rgba(255,255,255,0.75))" }}>
+              <h4 style={{ fontSize: "1.1rem", fontWeight: 700, margin: "0 0 0.5rem 0", color: "var(--accent-primary)" }}>{labels.summary}</h4>
+              <p style={{ margin: 0, fontSize: "0.95rem", color: "var(--text-secondary)", lineHeight: "1.6" }}>{data.executive_summary}</p>
+            </div>
+          )}
+
+          {/* Scheme Cards */}
+          {data.schemes && data.schemes.length > 0 ? (
+            <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
+              {data.schemes.map((s, idx) => {
+                const isEligible = s.status === "eligible";
+                
+                // Retrieve apply link from local database using scheme_id or fuzzy match
+                let applyUrl = null;
+                const localScheme = schemes.find(ls => 
+                  ls.scheme_id === s.scheme_id ||
+                  ls.name.toLowerCase().replace(/[^a-z0-9]/g, "") === s.scheme_id?.toLowerCase() ||
+                  ls.name.toLowerCase().replace(/[^a-z0-9]/g, "").includes(s.name.toLowerCase().replace(/\([^)]*\)/g, "").replace(/[^a-z0-9\s]/g, "").trim())
+                );
+
+                if (localScheme) {
+                  applyUrl = localScheme.apply_url;
+                } else {
+                  const nameLower = s.name.toLowerCase();
+                  let targetId = null;
+                  if (nameLower.includes("आयुष्मान") || nameLower.includes("pm-jay") || nameLower.includes("pmjay") || nameLower.includes("jan arogya")) {
+                    targetId = "pm_jay";
+                  } else if (nameLower.includes("किसान") || nameLower.includes("kisan")) {
+                    targetId = "pm_kisan";
+                  } else if (nameLower.includes("वृद्धावस्था") || nameLower.includes("old age") || nameLower.includes("pension")) {
+                    targetId = "ignoaps";
+                  } else if (nameLower.includes("चिरंजीवी") || nameLower.includes("chiranjeevi")) {
+                    targetId = "chiranjeevi";
+                  } else if (nameLower.includes("सुकन्या") || nameLower.includes("sukanya") || nameLower.includes("ssy")) {
+                    targetId = "ssy";
+                  } else if (nameLower.includes("मातृ वंदना") || nameLower.includes("matru vandana") || nameLower.includes("pmmvy")) {
+                    targetId = "pmmvy";
+                  } else if (nameLower.includes("विश्वकर्मा") || nameLower.includes("vishwakarma")) {
+                    targetId = "pm_vishwakarma";
+                  } else if (nameLower.includes("स्वनिधि") || nameLower.includes("svanidhi") || nameLower.includes("street vendor")) {
+                    targetId = "pm_svanidhi";
+                  } else if (nameLower.includes("अटल") || nameLower.includes("atal") || nameLower.includes("apy")) {
+                    targetId = "apy";
+                  } else if (nameLower.includes("श्रम") || nameLower.includes("shram")) {
+                    targetId = "e_shram";
+                  }
+                  
+                  if (targetId) {
+                    const matchLs = schemes.find(ls => ls.scheme_id === targetId);
+                    if (matchLs) applyUrl = matchLs.apply_url;
+                  }
+                }
+
+                return (
+                  <div key={idx} className="glass-panel animate-fade-in" style={{ padding: "1.75rem", borderLeft: `6px solid ${isEligible ? "var(--color-success)" : "var(--color-warning)"}`, background: "var(--bg-glass-heavy)", borderRadius: "var(--radius-lg)", boxShadow: "0 8px 32px rgba(0, 0, 0, 0.04)", marginBottom: "0.5rem" }}>
+                    {/* Category Header */}
+                    <div style={{ fontSize: "0.8rem", color: "var(--accent-primary)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: "0.25rem" }}>
+                      {s.category || (language === "hi" ? "कल्याण" : "Welfare")}
+                    </div>
+                    
+                    {/* Scheme Name */}
+                    <h4 style={{ fontSize: "1.3rem", fontWeight: 800, margin: "0 0 0.75rem 0", color: "var(--text-primary)" }}>{s.name}</h4>
+
+                    {/* Status Pill and Readiness Score */}
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "1rem", marginBottom: "1.25rem", background: "rgba(0,0,0,0.02)", padding: "0.75rem 1rem", borderRadius: "12px", border: "1px solid var(--border-glass)" }}>
+                      <span style={{
+                        fontSize: "0.8rem",
+                        fontWeight: 700,
+                        padding: "0.3rem 0.75rem",
+                        borderRadius: "99px",
+                        background: isEligible ? "rgba(16, 185, 129, 0.12)" : "rgba(245, 158, 11, 0.12)",
+                        color: isEligible ? "var(--color-success)" : "var(--color-warning)",
+                        border: `1px solid ${isEligible ? "rgba(16, 185, 129, 0.2)" : "rgba(245, 158, 11, 0.2)"}`
+                      }}>
+                        {isEligible ? labels.eligible : labels.nearMatch}
+                      </span>
+                      
+                      <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                        <span style={{ fontSize: "0.85rem", fontWeight: 600, color: "var(--text-secondary)" }}>
+                          {labels.score}: <strong style={{ color: "var(--accent-primary)", fontSize: "0.95rem" }}>{s.readiness_score || (isEligible ? 100 : 80)}/100</strong>
+                        </span>
+                        <div style={{ width: "60px", height: "6px", background: "rgba(0,0,0,0.06)", borderRadius: "3px", overflow: "hidden" }}>
+                          <div style={{ width: `${s.readiness_score || (isEligible ? 100 : 80)}%`, height: "100%", background: isEligible ? "var(--color-success)" : "var(--color-warning)" }} />
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* AI Quote */}
+                    {s.ai_quote && (
+                      <div style={{ fontStyle: "italic", fontSize: "0.95rem", color: "var(--text-secondary)", borderLeft: "3px solid var(--accent-primary)", paddingLeft: "1rem", margin: "1rem 0 1.25rem 0", background: "rgba(79, 70, 229, 0.02)", padding: "0.75rem 1rem", borderRadius: "0 8px 8px 0" }}>
+                        "{s.ai_quote}"
+                      </div>
+                    )}
+
+                    {/* Scheme Information Grid */}
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: "1.25rem", marginTop: "1rem" }}>
+                      {/* 1. Benefits */}
+                      {s.benefits && s.benefits.length > 0 && (
+                        <div>
+                          <h5 style={{ fontSize: "0.95rem", fontWeight: 700, margin: "0 0 0.5rem 0", color: "var(--text-primary)" }}>{labels.benefits}</h5>
+                          <ul style={{ margin: 0, paddingLeft: "1.2rem", fontSize: "0.9rem", color: "var(--text-secondary)", lineHeight: "1.5" }}>
+                            {s.benefits.map((b, i) => <li key={i} style={{ marginBottom: "0.25rem" }}>{b}</li>)}
+                          </ul>
+                        </div>
+                      )}
+
+                      {/* 2. Analysis */}
+                      {s.eligibility_analysis && (
+                        <div>
+                          <h5 style={{ fontSize: "0.95rem", fontWeight: 700, margin: "0 0 0.5rem 0", color: "var(--text-primary)" }}>{labels.analysis}</h5>
+                          <p style={{ margin: 0, fontSize: "0.9rem", color: "var(--text-secondary)", lineHeight: "1.5" }}>{s.eligibility_analysis}</p>
+                        </div>
+                      )}
+
+                      {/* 3. Requirements */}
+                      {s.requirements && s.requirements.length > 0 && (
+                        <div>
+                          <h5 style={{ fontSize: "0.95rem", fontWeight: 700, margin: "0 0 0.5rem 0", color: "var(--text-primary)" }}>{labels.reqs}</h5>
+                          <ul style={{ margin: 0, paddingLeft: "1.2rem", fontSize: "0.9rem", color: "var(--text-secondary)", lineHeight: "1.5" }}>
+                            {s.requirements.map((r, i) => <li key={i} style={{ marginBottom: "0.25rem", color: "var(--color-warning)" }}>{r}</li>)}
+                          </ul>
+                        </div>
+                      )}
+
+                      {/* 4. Documents */}
+                      {s.documents && s.documents.length > 0 && (
+                        <div>
+                          <h5 style={{ fontSize: "0.95rem", fontWeight: 700, margin: "0 0 0.5rem 0", color: "var(--text-primary)" }}>{labels.docs}</h5>
+                          <ul style={{ margin: 0, paddingLeft: "1.2rem", fontSize: "0.9rem", color: "var(--text-secondary)", lineHeight: "1.5" }}>
+                            {s.documents.map((d, i) => <li key={i} style={{ marginBottom: "0.25rem" }}>{d}</li>)}
+                          </ul>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* 5. Steps */}
+                    {s.steps && s.steps.length > 0 && (
+                      <div style={{ marginTop: "1.25rem", paddingTop: "1.25rem", borderTop: "1px solid var(--border-glass)" }}>
+                        <h5 style={{ fontSize: "0.95rem", fontWeight: 700, margin: "0 0 0.5rem 0", color: "var(--text-primary)" }}>{labels.steps}</h5>
+                        <ol style={{ margin: 0, paddingLeft: "1.2rem", fontSize: "0.9rem", color: "var(--text-secondary)", lineHeight: "1.5" }}>
+                          {s.steps.map((st, i) => <li key={i} style={{ marginBottom: "0.35rem" }}>{st}</li>)}
+                        </ol>
+                      </div>
+                    )}
+
+                    {/* 6. Apply Button */}
+                    {applyUrl && (
+                      <div style={{ marginTop: "1.5rem", display: "flex", justifyContent: "flex-end" }}>
+                        <a 
+                          href={applyUrl} 
+                          target="_blank" 
+                          rel="noopener noreferrer" 
+                          className="btn btn-primary"
+                          style={{ fontSize: "0.9rem", padding: "0.6rem 1.5rem", borderRadius: "30px", display: "inline-flex", alignItems: "center", gap: "0.5rem", textDecoration: "none", color: "#fff", fontWeight: 600, boxShadow: "0 4px 12px rgba(79, 70, 229, 0.2)" }}
+                        >
+                          <span>{labels.applyBtn}</span>
+                          <ExternalLink size={15} />
+                        </a>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="glass-panel" style={{ padding: "2rem", textAlign: "center" }}>
+              {language === "hi" ? "कोई योजना विवरण उपलब्ध नहीं है।" : "No scheme details available."}
+            </div>
+          )}
+        </div>
+      );
+    } catch (e) {
+      console.error("JSON parsing of AI report failed, falling back to markdown", e);
+      return (
+        <div className="glass-panel ai-report-container animate-fade-in" style={{ padding: "2rem", borderLeft: "4px solid var(--accent-primary)", background: "var(--bg-glass-heavy)", borderRadius: "var(--radius-md)" }}>
+          {renderMarkdown(reportText)}
+        </div>
+      );
+    }
+  }
 
   const i18n = {
     tagline: { hi: "योजना जागरूकता", en: "Schemes in your voice", ta: "திட்ட விழிப்புணர்வு", te: "పథకాల అవగాహన" },
@@ -349,8 +722,8 @@ export default function App() {
               </span>
             </div>
             <div className="schemes-tabs">
-              <button className={`tab-btn ${activeTab === "all" ? "active" : ""}`} onClick={() => setActiveTab("all")}>
-                {language === "hi" ? "सभी" : language === "ta" ? "அனைத்தும்" : language === "te" ? "అన్నీ" : "All"}
+              <button className={`tab-btn ${activeTab === "ai_report" ? "active" : ""}`} onClick={() => setActiveTab("ai_report")}>
+                📋 {language === "hi" ? "पात्रता रिपोर्ट" : "Eligibility Report"}
               </button>
               <button className={`tab-btn ${activeTab === "eligible" ? "active" : ""}`} onClick={() => setActiveTab("eligible")}>
                 {language === "hi" ? "पात्र" : language === "ta" ? "தகுதியானவை" : language === "te" ? "అర్హులు" : "Eligible"}
@@ -358,19 +731,62 @@ export default function App() {
               <button className={`tab-btn ${activeTab === "near_match" ? "active" : ""}`} onClick={() => setActiveTab("near_match")}>
                 {language === "hi" ? "निकटतम" : language === "ta" ? "கிட்டத்தட்ட" : language === "te" ? "దాదాపు" : "Near"}
               </button>
+              <button className={`tab-btn ${activeTab === "all" ? "active" : ""}`} onClick={() => setActiveTab("all")}>
+                {language === "hi" ? "सभी" : language === "ta" ? "அனைத்தும்" : language === "te" ? "అన్నీ" : "All"}
+              </button>
             </div>
           </div>
 
           <div className="schemes-list">
-            {filteredSchemes.length > 0 ? (
+            {activeTab === "ai_report" ? (
+              isGeneratingReport ? (
+                <div className="glass-panel" style={{ padding: "3rem 1.5rem", textAlign: "center", display: "flex", flexDirection: "column", gap: "1rem", alignItems: "center", justifyContent: "center" }}>
+                  <Loader2 size={36} className="animate-spin text-gradient" />
+                  <h4 style={{ fontWeight: 600 }}>{language === "hi" ? "आपकी कल्याण रिपोर्ट तैयार की जा रही है..." : "Preparing your welfare report..."}</h4>
+                  <p style={{ fontSize: "0.85rem", color: "var(--text-secondary)" }}>{language === "hi" ? "कृपया प्रतीक्षा करें, हम आपकी पात्रता का विश्लेषण कर रहे हैं।" : "Analyzing matching database schemes and documents..."}</p>
+                </div>
+              ) : aiReport ? (
+                <div className="glass-panel ai-report-container animate-fade-in" style={{ padding: "2rem", borderLeft: "4px solid var(--accent-primary)", background: "var(--bg-glass-heavy)", borderRadius: "var(--radius-md)" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.5rem", borderBottom: "1px dashed var(--border-glass)", paddingBottom: "0.75rem" }}>
+                    <span style={{ fontSize: "0.95rem", color: "var(--accent-primary)", fontWeight: 700, display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                      <span>📋</span> {language === "hi" ? "कल्याण सलाहकार पात्रता रिपोर्ट" : "Welfare Advisor Eligibility Report"}
+                    </span>
+                    <button 
+                      className="btn" 
+                      onClick={() => window.print()}
+                      style={{ padding: "0.3rem 0.6rem", fontSize: "0.75rem", background: "rgba(0,0,0,0.03)", border: "1px solid var(--border-glass)", borderRadius: "10px" }}
+                    >
+                      Print Report
+                    </button>
+                  </div>
+                  <div className="ai-report-content" style={{ fontSize: "0.95rem", color: "var(--text-secondary)", lineHeight: "1.6" }}>
+                    {renderAIReportDashboard(aiReport)}
+                  </div>
+                </div>
+              ) : (
+                <div className="glass-panel" style={{ padding: "3rem 1.5rem", textAlign: "center", display: "flex", flexDirection: "column", gap: "1rem", alignItems: "center", justifyContent: "center" }}>
+                  <FileText size={32} style={{ color: "var(--accent-primary)" }} />
+                  <h4 style={{ fontWeight: 600 }}>{language === "hi" ? "पात्रता रिपोर्ट उपलब्ध है" : "Eligibility Report Available"}</h4>
+                  <button 
+                    className="btn btn-primary" 
+                    onClick={handleGenerateReport}
+                    style={{ padding: "0.6rem 1.5rem", borderRadius: "30px", fontWeight: 600 }}
+                  >
+                    {language === "hi" ? "रिपोर्ट लोड करें" : "Load Report Now"}
+                  </button>
+                </div>
+              )
+            ) : filteredSchemes.length > 0 ? (
               filteredSchemes.map((match) => (
                 (match.status !== "ineligible" || activeTab === "all") && (
-                  <SchemeCard
-                    key={match.scheme.scheme_id}
-                    matchResult={match}
-                    language={language}
-                    userProfile={userProfile}
-                  />
+                  (match.status === activeTab || activeTab === "all") && (
+                    <SchemeCard
+                      key={match.scheme.scheme_id}
+                      matchResult={match}
+                      language={language}
+                      userProfile={userProfile}
+                    />
+                  )
                 )
               ))
             ) : (
@@ -462,11 +878,21 @@ export default function App() {
       {currentPage === "results" && ResultsPage}
 
       <VoiceAssistant
+        userProfile={userProfile}
+        onProfileChange={handleProfileChange}
+        onCompleteQuestionnaire={handleCompleteQuestionnaire}
         onTranscriptReceived={handleTranscriptReceived}
         aiResponse={aiResponse}
         language={language}
         isProcessing={isProcessing}
         onReadyToShowResults={handleReadyToShowResults}
+        isGeneratingReport={isGeneratingReport}
+      />
+
+      <Settings
+        isOpen={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+        onKeySave={() => {}}
       />
     </div>
   );
